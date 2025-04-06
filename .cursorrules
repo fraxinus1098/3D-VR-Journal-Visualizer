@@ -30,7 +30,6 @@ dependencies:
         - umap-learn: For UMAP dimensionality reduction (n_components=3).
         - regex (re): For parsing journal entry structures (dates, etc.).
         - numpy: Likely needed for embedding/UMAP operations.
-    - environment: Recommend using venv or conda.
 
   # JavaScript Visualization Application Dependencies
   javascript:
