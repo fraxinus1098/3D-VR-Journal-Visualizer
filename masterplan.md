@@ -8,7 +8,6 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Create a 3D visualization of emotional patterns and thematic connections
 - Develop a WebXR application compatible with Oculus Quest 3
 - Enable interactive exploration of journal entries in an immersive environment
-- Optional: Incorporate select Warhol paintings into the visualization
 
 ## 3. Target Audience
 - Primary: You (for class project)
@@ -38,6 +37,7 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 2. Process entries to identify dates and content
 3. Process entries in logical batches (by year or month)
    - Generate sentiment analysis using GPT-4o mini API
+   - Extract topics and entities (people, places) using GPT-4o mini API
    - Map to Plutchik's 8 emotions with intensity values (0.0-1.0)
    - Process within token limits (128K context window)
 4. Generate embeddings using text-embedding-3-large in batches
@@ -67,22 +67,14 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
         "anger": 0.0,
         "anticipation": 0.3
       },
-      "embedding": [0.23, 0.45, ...],
-      "coordinates": {"x": 12.3, "y": 5.6, "z": -3.2},
       "topics": ["art", "business", "friends"],
       "entities": {
         "people": ["Mick Jagger", "Fred Hughes"],
         "places": ["Factory", "Studio 54"]
       },
+      "embedding": [0.23, 0.45, ...],
+      "coordinates": {"x": 12.3, "y": 5.6, "z": -3.2},
       "relatedEntries": ["45", "67", "89"]
-    }
-  ],
-  "paintings": [
-    {
-      "title": "Campbell's Soup Cans",
-      "date": "1962-07-09",
-      "image": "campbells_soup.webp",
-      "dimensions": [512, 512]
     }
   ]
 }
@@ -102,7 +94,6 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
   - Position: Determined by UMAP clustering
 - **Connections**: Visual links between related entries
 - **Background**: Abstract space environment (minimalist style)
-- **Optional**: Selected Warhol paintings displayed as textured planes near relevant entries
 
 ### Audio Design
 - 8 base ambient loops (one per emotion)
@@ -153,14 +144,15 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 **Tasks:**
 - Set up OpenAI API credentials
 - Group entries by year for batch processing
-- Implement sentiment analysis with GPT-4o mini in batches
+- Implement sentiment analysis, topic extraction, and entity recognition with GPT-4o mini in batches
 - Generate embeddings with text-embedding-3-large in batches
 - Save interim results by batch and year
 
 **Key Points:**
-- Process entries in batches of 30-50 to stay within API token limits
+- Process entries in batches of per each year to stay within API token limits
 - Group by year for logical processing units and checkpointing
-- Focus on Plutchik's 8 emotions with 0.0-1.0 scale
+- Extract Plutchik's 8 emotions with 0.0-1.0 scale
+- Extract topics and entities (people, places) in the same API call
 - Implement proper error handling and retry logic for API calls
 - Save interim results regularly to prevent data loss
 - Maintain original 3,072 dimension embeddings for UMAP processing
@@ -262,7 +254,7 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 **Key Points:**
 - Position panel at comfortable reading distance
 - Make panel follow user's gaze/position
-- Format entry text with date and content
+- Format entry text with date, content, topics, and entities
 - Add close button for dismissing panel
 - Ensure text is readable in VR
 
@@ -304,19 +296,7 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Consider instanced meshes for similar orbs if performance issues arise
 - Test performance on Quest 3 hardware
 
-#### Phase 4.2: Optional Painting Integration
-**Tasks:**
-- Load and display painting images
-- Position paintings near related entries
-- Optimize texture loading
-
-**Key Points:**
-- Use WebP format for compressed textures
-- Create simple picture frames for paintings
-- Position near chronologically related entries
-- Implement texture atlas if using many paintings
-
-#### Phase 4.3: Deployment Preparation
+#### Phase 4.2: Deployment Preparation
 **Tasks:**
 - Set up GitHub repository
 - Configure build process for production
@@ -328,7 +308,7 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Add appropriate scripts to package.json
 - Create proper .gitignore file
 
-#### Phase 4.4: Testing and Final Deployment
+#### Phase 4.3: Testing and Final Deployment
 **Tasks:**
 - Test locally with WebXR emulator
 - Build for production
@@ -380,18 +360,30 @@ def analyze_entries_batch(entries_batch):
     # Prepare batch of entries for analysis
     entries_text = "\n\n".join([f"[{entry['id']}]: {entry['text']}" for entry in entries_batch])
     
-    sentiment_prompt = f"""
-    Analyze the following journal entries from Andy Warhol and rate the intensity of each emotion on a scale of 0.0 to 1.0:
-    - Anger
-    - Anticipation
-    - Joy
-    - Trust
-    - Fear
-    - Surprise
-    - Sadness
-    - Disgust
+    comprehensive_prompt = f"""
+    Analyze the following journal entries from Andy Warhol and provide:
     
-    Return a JSON array where each object contains an "id" field matching the entry ID and an "emotions" object with the emotions as keys.
+    1. Emotion rating: Rate the intensity of each emotion on a scale of 0.0 to 1.0:
+       - Anger
+       - Anticipation
+       - Joy
+       - Trust
+       - Fear
+       - Surprise
+       - Sadness
+       - Disgust
+    
+    2. Topics: Identify 1-5 main topics discussed in each entry (e.g., art, business, celebrities, etc.)
+    
+    3. Entities: Extract named entities in these categories:
+       - People: Names of individuals mentioned
+       - Places: Locations mentioned
+    
+    Return a JSON array where each object contains:
+    - "id" field matching the entry ID
+    - "emotions" object with the emotions as keys and intensities as values
+    - "topics" array with topic strings
+    - "entities" object with "people" and "places" arrays
     
     Entries:
     {entries_text}
@@ -401,8 +393,8 @@ def analyze_entries_batch(entries_batch):
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You analyze text and return JSON."},
-                {"role": "user", "content": sentiment_prompt}
+                {"role": "system", "content": "You analyze text and return structured JSON."},
+                {"role": "user", "content": comprehensive_prompt}
             ]
         )
         return json.loads(response.choices[0].message.content)
@@ -442,9 +434,9 @@ for year, year_entries in entries_by_year.items():
     for i in range(0, len(year_entries), batch_size):
         current_batch = year_entries[i:i+batch_size]
         
-        # 1. Get emotion analysis
-        emotions_results = analyze_entries_batch(current_batch)
-        if not emotions_results:
+        # 1. Get comprehensive analysis (emotions, topics, entities)
+        analysis_results = analyze_entries_batch(current_batch)
+        if not analysis_results:
             continue
             
         # 2. Get embeddings (smaller batches for embeddings if needed)
@@ -460,11 +452,13 @@ for year, year_entries in entries_by_year.items():
         
         # 3. Combine results
         for idx, entry in enumerate(current_batch):
-            if idx < len(emotions_results) and idx < len(all_embeddings):
-                entry_emotions = next((e for e in emotions_results if e["id"] == entry["id"]), None)
-                if entry_emotions:
+            if idx < len(analysis_results) and idx < len(all_embeddings):
+                entry_analysis = next((e for e in analysis_results if e["id"] == entry["id"]), None)
+                if entry_analysis:
                     processed_entry = entry.copy()
-                    processed_entry["emotions"] = entry_emotions["emotions"]
+                    processed_entry["emotions"] = entry_analysis["emotions"]
+                    processed_entry["topics"] = entry_analysis["topics"]
+                    processed_entry["entities"] = entry_analysis["entities"]
                     processed_entry["embedding"] = all_embeddings[idx]
                     all_processed_entries.append(processed_entry)
         
@@ -522,14 +516,6 @@ function createVisualization(data) {
   data.entries.forEach(entry => {
     const orb = createOrb(entry);
     scene.add(orb);
-  });
-  
-  // Optional: Add paintings
-  data.paintings.forEach(painting => {
-    if (painting.date) {
-      const frame = createPaintingFrame(painting);
-      scene.add(frame);
-    }
   });
 }
 
@@ -618,6 +604,5 @@ function setupAudio() {
 ## 10. Performance Considerations
 - Limit concurrent audio sources to preserve performance
 - Implement level-of-detail for distant orbs
-- Texture atlas for painting images
 - Optimize raycasting for interaction
 - Implement frustum culling for distant objects
