@@ -130,7 +130,6 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Implement PDF text extraction with pdfplumber
 
 **Key Points:**
-- Use virtual environment (venv or conda)
 - Extract full text from "The Andy Warhol Diaries" PDF
 
 #### Phase 1.2: Entry Parsing and Structure

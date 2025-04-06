@@ -1,0 +1,30 @@
+# Virtual environment
+venv/
+env/
+ENV/
+
+# Python compiled files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Environment variables
+.env
+
+# PDF input files
+*.pdf
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Output files
+../output/*.txt
+../output/*.json
+
+# Log files
+*.log 
