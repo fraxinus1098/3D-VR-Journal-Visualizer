@@ -1,24 +1,24 @@
-# .cursorrules - Context for Andy Warhol 3D Journal Visualization Project
+# .cursorrules - Context for Andy Warhol 3D Journal Visualization Project (Updated)
 
 documentation:
   - project_name: Andy Warhol 3D Journal Visualization
   - description: |
       A WebXR application visualizing Andy Warhol's journal entries (~4000 from "The Andy Warhol Diaries")
       as an immersive 3D mindmap viewable on Oculus Quest 3. Uses NLP (OpenAI APIs) to analyze
-      entries for emotional and thematic content, creating an interactive landscape.
+      entries for emotional content, topics, and entities, creating an interactive landscape based
+      on embeddings and UMAP dimensionality reduction.
   - data_source: "The Andy Warhol Diaries" PDF
-  - core_concept: 3D mindmap/landscape based on NLP analysis (emotion, embeddings) and UMAP dimensionality reduction.
+  - core_concept: 3D mindmap/landscape based on NLP analysis (emotion, topics, entities, embeddings) and UMAP dimensionality reduction.
   - target_platform: WebXR on Oculus Quest 3.
-  - visualization_style: Abstract space environment with orbs representing entries, colored/sized by emotion, positioned by UMAP. Optional Warhol paintings integrated.
+  - visualization_style: Abstract space environment with orbs representing entries, colored/sized by emotion, positioned by UMAP.
 
 goals:
-  - Process and analyze ~4000 journal entries using Python and OpenAI.
-  - Generate structured JSON data including text, date, sentiment (Plutchik's 8 emotions), embeddings, UMAP coordinates, topics, entities, and related entries.
+  - Process and analyze ~4000 journal entries using Python and OpenAI APIs.
+  - Generate structured JSON data including text, date, location, sentiment (Plutchik's 8 emotions), topics, entities (people, places), embeddings, UMAP coordinates, and related entries.
   - Develop a Three.js WebXR application using Vite.
-  - Implement interactive exploration: movement (continuous/teleport), orb selection, entry display panel, related entry highlighting.
+  - Implement interactive exploration: movement (continuous/teleport), orb selection, entry display panel (showing text, date, topics, entities), related entry highlighting.
   - Integrate dynamic ambient audio based on emotional clusters (Web Audio API).
   - Deploy the application via GitHub Pages.
-  - Optional: Integrate select Warhol paintings as textured planes.
 
 dependencies:
   # Python Data Processing Dependencies
@@ -26,17 +26,19 @@ dependencies:
     - language_version: 3.x (Specify if known, e.g., 3.10+)
     - main_libraries:
         - pdfplumber: For PDF text extraction.
-        - openai: For interacting with GPT-4o mini (sentiment) and text-embedding-3-large (embeddings).
+        - openai: For interacting with GPT-4o mini (analysis) and text-embedding-3-large (embeddings).
         - umap-learn: For UMAP dimensionality reduction (n_components=3).
         - regex (re): For parsing journal entry structures (dates, etc.).
         - numpy: Likely needed for embedding/UMAP operations.
+        - tqdm: For progress bars during batch processing.
+    # Note: User opted out of explicit virtual environment mention.
 
   # JavaScript Visualization Application Dependencies
   javascript:
     - framework: three.js (Utilizing WebXR API integration, VRButton, XRControllerModelFactory).
     - build_tool: vite
     - potential_libraries:
-        - UMAP-JS (or similar): If UMAP calculation or refinement is needed client-side (less likely based on plan).
+        - UMAP-JS (or similar): Unlikely needed as UMAP is done in Python.
         - Text rendering library: Consider troika-three-text or three-mesh-ui for readable text panels in VR.
     - api: Web Audio API (for spatial/dynamic audio).
 
@@ -47,11 +49,27 @@ dependencies:
 technical_details:
   # Data Processing Pipeline (Python)
   data_processing:
-    - pipeline_steps: Extract PDF -> Parse Entries (regex for dates) -> Analyze (OpenAI: GPT-4o mini for Plutchik's 8 emotions, text-embedding-3-large for vectors) -> Reduce Dimensionality (UMAP to 3D) -> Calculate Relations (cosine similarity) -> Output JSON.
-    - sentiment_analysis: Use GPT-4o mini with a prompt structured to return JSON intensity scores (0.0-1.0) for Plutchik's 8 emotions: anger, anticipation, joy, trust, fear, surprise, sadness, disgust.
-    - embeddings: Use text-embedding-3-large model via OpenAI API.
-    - dimensionality_reduction: Use UMAP with n_components=3 and random_state=42. Scale coordinates appropriately for Three.js scene.
-    - output_format: Final output is a single JSON file (see `data_structure` below).
+    - pipeline_steps: |
+        1. Extract PDF text (pdfplumber).
+        2. Parse Entries (regex for dates).
+        3. Group entries by year.
+        4. Process year-by-year in smaller batches:
+            - Analyze Batch (OpenAI GPT-4o mini): Get emotions, topics, entities per entry. Respect token limits (e.g., 128K context).
+            - Generate Embeddings Batch (OpenAI text-embedding-3-large): Get 3072-dim vectors. Respect token limits (e.g., 8191 input tokens per call).
+        5. Save interim results frequently (e.g., per batch/year) for resilience.
+        6. Merge all processed entries from interim files.
+        7. Reduce Dimensionality (UMAP): Apply UMAP (n=3) on the *complete* set of embeddings.
+        8. Calculate Relations (cosine similarity on embeddings).
+        9. Output final comprehensive JSON.
+    - batch_processing_strategy:
+        - Group entries by year initially for logical division and checkpointing.
+        - Process each year's entries in smaller, manageable batches (e.g., 10-30 entries) for API calls to avoid token limits.
+        - Implement error handling and retry logic (e.g., simple sleep/backoff) for API calls.
+        - Save processed data incrementally (e.g., `warhol_{year}_batch_{i}.json`, `warhol_{year}_processed.json`) before final merge.
+    - analysis_api_call: Use GPT-4o mini. Single prompt designed to extract JSON containing `id`, Plutchik's 8 `emotions` (0.0-1.0 scale), `topics` array, and `entities` object (`people`, `places` arrays) for multiple entries in a batch.
+    - embeddings: Use text-embedding-3-large model. Process in batches respecting input token limits (8191). Store the full 3,072 dimension vectors.
+    - dimensionality_reduction: Use UMAP with `n_components=3` and `random_state=42` on the *full* dataset after merging batches. Scale coordinates appropriately for Three.js scene.
+    - output_format: Final output is a single JSON file (`warhol_complete.json` or similar) containing the `entries` array.
 
   # Visualization Application (Three.js / WebXR)
   visualization:
@@ -62,9 +80,9 @@ technical_details:
         - Color: Determined by the dominant emotion (map Plutchik emotions to distinct colors). Use `MeshStandardMaterial` with `emissive` property for glow.
         - Size: Scaled based on overall emotional intensity (sum or max of emotion scores).
         - UserData: Store corresponding entry data (`entry`) and `interactive` flag on each orb mesh.
-    - connections: Visual links (e.g., THREE.LineSegments or TubeGeometry) between orbs representing related entries (`relatedEntries` array).
-    - paintings: Optional textured planes (THREE.PlaneGeometry with THREE.TextureLoader/MeshBasicMaterial) displaying Warhol paintings (`.webp` format). Position near relevant entries (e.g., chronologically).
-    - text_panel: Floating panel (e.g., THREE.Group with Plane background) displaying selected entry text, date, etc. Should follow user gaze/position at readable distance. Use a VR-friendly text rendering solution.
+    - connections: Visual links (e.g., THREE.LineSegments or TubeGeometry) between orbs representing related entries (`relatedEntries` array). Triggered on selection.
+    - background: Abstract, minimalist space environment.
+    - text_panel: Floating panel (e.g., THREE.Group with Plane background) displaying selected entry text, date, location, topics, and entities. Should follow user gaze/position at readable distance. Use a VR-friendly text rendering solution.
 
   # Interaction (WebXR / Three.js)
   interaction:
@@ -76,15 +94,14 @@ technical_details:
   # Audio (Web Audio API)
   audio:
     - ambient: 8 base audio loops (one per Plutchik emotion).
-    - spatialization/blending: Use Web Audio API's GainNodes. Dynamically crossfade between emotion loops based on user's proximity to emotional clusters in the 3D space.
+    - spatialization/blending: Use Web Audio API's GainNodes. Dynamically crossfade between emotion loops based on user's proximity to emotional clusters in the 3D space (calculated based on orb positions and their dominant emotions).
     - interaction_sounds: Subtle sounds for selection, deselection, UI interactions.
 
   # Performance
   performance_considerations:
     - Frustum culling (built into Three.js).
     - Level of Detail (LOD) for distant orbs (simpler geometry/material).
-    - Instanced Meshes if many similar orbs cause performance issues.
-    - Texture Atlas for painting images if many are used.
+    - Instanced Meshes if many similar orbs cause performance bottlenecks.
     - Optimize raycasting frequency/targets.
     - Limit concurrent audio sources/processing.
     - Test frequently on target hardware (Quest 3).
@@ -110,24 +127,16 @@ data_structure:
             "anger": 0.0,
             "anticipation": 0.3
           },
-          "embedding": [float, float, ...], // High-dimensional embedding vector
-          "coordinates": {"x": float, "y": float, "z": float}, // UMAP 3D coordinates
-          "topics": ["string", ...], // Key topics identified (optional, add if implemented)
-          "entities": { // Key entities identified (optional, add if implemented)
+          "topics": ["string", ...], // Key topics identified
+          "entities": { // Key entities identified
             "people": ["string", ...],
             "places": ["string", ...]
           },
-          "relatedEntries": ["string", ...] // List of IDs of related entries
+          "embedding": [float, float, ...], // High-dimensional embedding vector (3072 dims)
+          "coordinates": {"x": float, "y": float, "z": float}, // UMAP 3D coordinates
+          "relatedEntries": ["string", ...] // List of IDs of related entries (based on embedding similarity)
         }
-        // ... more entries
-      ],
-      "paintings": [ // Optional array for painting data
-        {
-          "title": "string",
-          "date": "YYYY-MM-DD | null", // Date associated with the painting
-          "image": "string", // Filename (e.g., "campbells_soup.webp")
-          "dimensions": [int, int] // Optional image dimensions
-        }
-        // ... more paintings
+        // ... more entries (~4000 total)
       ]
+      // NOTE: "paintings" array removed based on updated plan
     }
