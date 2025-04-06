@@ -1,0 +1,134 @@
+# .cursorrules - Context for Andy Warhol 3D Journal Visualization Project
+
+documentation:
+  - project_name: Andy Warhol 3D Journal Visualization
+  - description: |
+      A WebXR application visualizing Andy Warhol's journal entries (~4000 from "The Andy Warhol Diaries")
+      as an immersive 3D mindmap viewable on Oculus Quest 3. Uses NLP (OpenAI APIs) to analyze
+      entries for emotional and thematic content, creating an interactive landscape.
+  - data_source: "The Andy Warhol Diaries" PDF
+  - core_concept: 3D mindmap/landscape based on NLP analysis (emotion, embeddings) and UMAP dimensionality reduction.
+  - target_platform: WebXR on Oculus Quest 3.
+  - visualization_style: Abstract space environment with orbs representing entries, colored/sized by emotion, positioned by UMAP. Optional Warhol paintings integrated.
+
+goals:
+  - Process and analyze ~4000 journal entries using Python and OpenAI.
+  - Generate structured JSON data including text, date, sentiment (Plutchik's 8 emotions), embeddings, UMAP coordinates, topics, entities, and related entries.
+  - Develop a Three.js WebXR application using Vite.
+  - Implement interactive exploration: movement (continuous/teleport), orb selection, entry display panel, related entry highlighting.
+  - Integrate dynamic ambient audio based on emotional clusters (Web Audio API).
+  - Deploy the application via GitHub Pages.
+  - Optional: Integrate select Warhol paintings as textured planes.
+
+dependencies:
+  # Python Data Processing Dependencies
+  python:
+    - language_version: 3.x (Specify if known, e.g., 3.10+)
+    - main_libraries:
+        - pdfplumber: For PDF text extraction.
+        - openai: For interacting with GPT-4o mini (sentiment) and text-embedding-3-large (embeddings).
+        - umap-learn: For UMAP dimensionality reduction (n_components=3).
+        - regex (re): For parsing journal entry structures (dates, etc.).
+        - numpy: Likely needed for embedding/UMAP operations.
+    - environment: Recommend using venv or conda.
+
+  # JavaScript Visualization Application Dependencies
+  javascript:
+    - framework: three.js (Utilizing WebXR API integration, VRButton, XRControllerModelFactory).
+    - build_tool: vite
+    - potential_libraries:
+        - UMAP-JS (or similar): If UMAP calculation or refinement is needed client-side (less likely based on plan).
+        - Text rendering library: Consider troika-three-text or three-mesh-ui for readable text panels in VR.
+    - api: Web Audio API (for spatial/dynamic audio).
+
+  # Deployment
+  deployment:
+    - platform: GitHub Pages
+
+technical_details:
+  # Data Processing Pipeline (Python)
+  data_processing:
+    - pipeline_steps: Extract PDF -> Parse Entries (regex for dates) -> Analyze (OpenAI: GPT-4o mini for Plutchik's 8 emotions, text-embedding-3-large for vectors) -> Reduce Dimensionality (UMAP to 3D) -> Calculate Relations (cosine similarity) -> Output JSON.
+    - sentiment_analysis: Use GPT-4o mini with a prompt structured to return JSON intensity scores (0.0-1.0) for Plutchik's 8 emotions: anger, anticipation, joy, trust, fear, surprise, sadness, disgust.
+    - embeddings: Use text-embedding-3-large model via OpenAI API.
+    - dimensionality_reduction: Use UMAP with n_components=3 and random_state=42. Scale coordinates appropriately for Three.js scene.
+    - output_format: Final output is a single JSON file (see `data_structure` below).
+
+  # Visualization Application (Three.js / WebXR)
+  visualization:
+    - scene_setup: Basic Three.js scene, perspective camera (~1.6m height), WebGLRenderer with XR enabled. Dark, abstract space background (e.g., `scene.background = new THREE.Color(0x000011)`). Ambient and directional lighting.
+    - orbs:
+        - Represent individual journal entries (THREE.SphereGeometry).
+        - Position: Based on `coordinates` (x, y, z) from JSON data.
+        - Color: Determined by the dominant emotion (map Plutchik emotions to distinct colors). Use `MeshStandardMaterial` with `emissive` property for glow.
+        - Size: Scaled based on overall emotional intensity (sum or max of emotion scores).
+        - UserData: Store corresponding entry data (`entry`) and `interactive` flag on each orb mesh.
+    - connections: Visual links (e.g., THREE.LineSegments or TubeGeometry) between orbs representing related entries (`relatedEntries` array).
+    - paintings: Optional textured planes (THREE.PlaneGeometry with THREE.TextureLoader/MeshBasicMaterial) displaying Warhol paintings (`.webp` format). Position near relevant entries (e.g., chronologically).
+    - text_panel: Floating panel (e.g., THREE.Group with Plane background) displaying selected entry text, date, etc. Should follow user gaze/position at readable distance. Use a VR-friendly text rendering solution.
+
+  # Interaction (WebXR / Three.js)
+  interaction:
+    - controllers: Use standard Quest 3 controllers (load models via `XRControllerModelFactory`). Implement raycasting from controllers for selection.
+    - movement: Continuous movement using controller thumbstick/touchpad. Optional teleportation for large distances.
+    - selection: Raycaster intersects with interactive orbs. Highlight selected orb (e.g., change material, outline). Display entry details in the text panel. Highlight related orbs and show connection lines.
+    - ui: Minimalist, VR-optimized controls (e.g., close button on text panel).
+
+  # Audio (Web Audio API)
+  audio:
+    - ambient: 8 base audio loops (one per Plutchik emotion).
+    - spatialization/blending: Use Web Audio API's GainNodes. Dynamically crossfade between emotion loops based on user's proximity to emotional clusters in the 3D space.
+    - interaction_sounds: Subtle sounds for selection, deselection, UI interactions.
+
+  # Performance
+  performance_considerations:
+    - Frustum culling (built into Three.js).
+    - Level of Detail (LOD) for distant orbs (simpler geometry/material).
+    - Instanced Meshes if many similar orbs cause performance issues.
+    - Texture Atlas for painting images if many are used.
+    - Optimize raycasting frequency/targets.
+    - Limit concurrent audio sources/processing.
+    - Test frequently on target hardware (Quest 3).
+
+# Data Structure Reference (Output from Python, Input to JavaScript)
+data_structure:
+  description: The structure of the main JSON data file generated by the Python script.
+  format: |
+    {
+      "entries": [
+        {
+          "id": "string", // Unique identifier for the entry
+          "date": "YYYY-MM-DD",
+          "location": "string | null", // Location mentioned in entry, if available
+          "text": "string", // Full journal entry text
+          "emotions": { // Plutchik's 8 emotions, scores 0.0-1.0
+            "joy": 0.7,
+            "trust": 0.5,
+            "fear": 0.1,
+            "surprise": 0.2,
+            "sadness": 0.0,
+            "disgust": 0.0,
+            "anger": 0.0,
+            "anticipation": 0.3
+          },
+          "embedding": [float, float, ...], // High-dimensional embedding vector
+          "coordinates": {"x": float, "y": float, "z": float}, // UMAP 3D coordinates
+          "topics": ["string", ...], // Key topics identified (optional, add if implemented)
+          "entities": { // Key entities identified (optional, add if implemented)
+            "people": ["string", ...],
+            "places": ["string", ...]
+          },
+          "relatedEntries": ["string", ...] // List of IDs of related entries
+        }
+        // ... more entries
+      ],
+      "paintings": [ // Optional array for painting data
+        {
+          "title": "string",
+          "date": "YYYY-MM-DD | null", // Date associated with the painting
+          "image": "string", // Filename (e.g., "campbells_soup.webp")
+          "dimensions": [int, int] // Optional image dimensions
+        }
+        // ... more paintings
+      ]
+    }
