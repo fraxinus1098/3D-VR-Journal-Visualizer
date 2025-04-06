@@ -1,1 +1,1 @@
-# 3D-VR-Journal-Visualizer test
+# 3D-VR-Journal-Visualizer
