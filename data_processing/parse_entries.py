@@ -56,7 +56,43 @@ def parse_entries(text):
     
     # Pattern for entry headers: Day, Month DD, YYYY—Location
     # The locations can be multiple and are separated by em dash (—)
-    entry_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})(?:—(.+?))?(?=\n|$)'
+    entry_pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s*(January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})(?:—(.+?))?(?=\n|$)'
+    
+    # Pattern for location at the start of entry text
+    # More strict pattern to only match proper location names
+    # Locations typically are short, capitalized place names, often followed by state/country names
+    location_at_start_pattern = r'^([A-Z][a-z]+(?:[\s,]+[A-Z][a-z]+){0,3}(?:,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)?)\n'
+    
+    # Additional validation for locations - known places, common words for places
+    valid_location_words = [
+        'New York', 'Los Angeles', 'Paris', 'London', 'Chadds Ford', 'Philadelphia',
+        'Vancouver', 'Chicago', 'Washington', 'San Francisco', 'Toronto', 'Boston',
+        'Italy', 'France', 'England', 'Germany', 'Spain', 'Switzerland', 'Austria',
+        'Airport', 'Hotel', 'Museum', 'Factory', 'Studio', 'Theater', 'Beach',
+        'Mountains', 'Lake', 'River', 'Park', 'Gallery', 'Restaurant', 'North', 'South',
+        'East', 'West', 'Upper', 'Lower', 'Downtown', 'Uptown', 'Midtown'
+    ]
+    
+    # Function to validate a location
+    def is_valid_location(loc_text):
+        # Must start with capital letter
+        if not loc_text or not loc_text[0].isupper():
+            return False
+            
+        # Check if it's too long to be a location
+        if len(loc_text.split()) > 5:
+            return False
+            
+        # Check if it contains any valid location words
+        for word in valid_location_words:
+            if word.lower() in loc_text.lower():
+                return True
+                
+        # Check if it's a short capitalized place name (likely a city or state)
+        if re.match(r'^[A-Z][a-z]+(?:[\s,]+[A-Z][a-z]+){0,3}$', loc_text):
+            return True
+            
+        return False
     
     # Find all matches of entry headers
     matches = re.finditer(entry_pattern, text)
@@ -85,10 +121,25 @@ def parse_entries(text):
             prev_header = entry_positions[i-1][1]
             day, month, day_num, year, locations = re.match(entry_pattern, prev_header).groups()
             
-            # Parse locations (if present)
+            # Parse locations from header (if present)
             location_list = []
             if locations:
                 location_list = [loc.strip() for loc in locations.split('—') if loc.strip()]
+            
+            # Check for additional location at the start of the content
+            location_match = re.match(location_at_start_pattern, content)
+            if location_match:
+                # Found a potential location at the start of the content
+                additional_location = location_match.group(1).strip()
+                
+                # Only add if it passes validation as a legitimate location
+                if is_valid_location(additional_location):
+                    # Add to locations list if not already present
+                    if additional_location not in location_list:
+                        location_list.append(additional_location)
+                    
+                    # Remove the location line from the content
+                    content = content[location_match.end():].strip()
             
             # Create date string in ISO format
             month_num = {
@@ -121,10 +172,25 @@ def parse_entries(text):
         # Parse the last header
         day, month, day_num, year, locations = re.match(entry_pattern, last_header).groups()
         
-        # Parse locations (if present)
+        # Parse locations from header (if present)
         location_list = []
         if locations:
             location_list = [loc.strip() for loc in locations.split('—') if loc.strip()]
+        
+        # Check for additional location at the start of the content
+        location_match = re.match(location_at_start_pattern, content)
+        if location_match:
+            # Found a potential location at the start of the content
+            additional_location = location_match.group(1).strip()
+            
+            # Only add if it passes validation as a legitimate location
+            if is_valid_location(additional_location):
+                # Add to locations list if not already present
+                if additional_location not in location_list:
+                    location_list.append(additional_location)
+                
+                # Remove the location line from the content
+                content = content[location_match.end():].strip()
         
         # Create date string in ISO format
         month_num = {
@@ -166,23 +232,32 @@ def save_entries_to_json(entries, output_path):
         raise
 
 def main():
+    # Default paths
+    default_input = r"C:\Users\minha\OneDrive - Yale University\Classes\2025 Spring\THST 359 - Nature, AI, and Performance\Final Project\3D-VR-Journal-Visualizer\Andy Warhol Diaries\extracted_text.txt"
+    default_output = r"C:\Users\minha\OneDrive - Yale University\Classes\2025 Spring\THST 359 - Nature, AI, and Performance\Final Project\3D-VR-Journal-Visualizer\output\parsed_entries.json"
+    
+    # Support for command line arguments (optional override)
     parser = argparse.ArgumentParser(description="Parse journal entries from extracted text")
-    parser.add_argument('--input', required=True, help="Path to the extracted text file")
-    parser.add_argument('--output', required=True, help="Path to save the parsed entries JSON")
+    parser.add_argument('--input', help="Path to the extracted text file (default: specified path)")
+    parser.add_argument('--output', help="Path to save the parsed entries JSON (default: specified path)")
     
     args = parser.parse_args()
     
+    # Use provided arguments or defaults
+    input_path = args.input if args.input else default_input
+    output_path = args.output if args.output else default_output
+    
     # Create output directory if it doesn't exist
-    output_dir = os.path.dirname(args.output)
+    output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
         logger.info(f"Created output directory: {output_dir}")
     
     # Read extracted text
     try:
-        with open(args.input, 'r', encoding='utf-8') as f:
+        with open(input_path, 'r', encoding='utf-8') as f:
             text = f.read()
-        logger.info(f"Read {len(text)} characters from {args.input}")
+        logger.info(f"Read {len(text)} characters from {input_path}")
     except Exception as e:
         logger.error(f"Error reading input file: {e}")
         sys.exit(1)
@@ -191,7 +266,7 @@ def main():
     entries = parse_entries(text)
     
     # Save entries to JSON
-    save_entries_to_json(entries, args.output)
+    save_entries_to_json(entries, output_path)
     
     logger.info("Entry parsing completed successfully")
 
