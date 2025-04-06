@@ -36,11 +36,17 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 ### Data Processing Pipeline
 1. Extract text from "The Andy Warhol Diaries" PDF
 2. Process entries to identify dates and content
-3. Generate sentiment analysis using GPT-4o mini API
-   - Map to Plutchik's 8 emotions (anger, anticipation, joy, trust, fear, surprise, sadness, disgust)
-4. Generate embeddings using text-embedding-3-large
-5. Create clustering via UMAP dimensionality reduction
-6. Output structured JSON for visualization
+3. Process entries in logical batches (by year or month)
+   - Generate sentiment analysis using GPT-4o mini API
+   - Map to Plutchik's 8 emotions with intensity values (0.0-1.0)
+   - Process within token limits (128K context window)
+4. Generate embeddings using text-embedding-3-large in batches
+   - Process entries within 8,191 token limit per embedding
+   - Maintain full 3,072 dimension vectors for all entries
+5. Store interim results by batch for processing resilience
+6. Merge all processed batches into single comprehensive JSON file
+7. Create clustering via UMAP dimensionality reduction on the complete dataset
+8. Output final structured JSON for visualization
 
 ### Data Output Structure
 ```json
@@ -146,13 +152,18 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 #### Phase 1.3: OpenAI Integration for Analysis
 **Tasks:**
 - Set up OpenAI API credentials
-- Implement sentiment analysis with GPT-4o mini
-- Generate embeddings with text-embedding-3-large
+- Group entries by year for batch processing
+- Implement sentiment analysis with GPT-4o mini in batches
+- Generate embeddings with text-embedding-3-large in batches
+- Save interim results by batch and year
 
 **Key Points:**
-- Focus on Plutchik's 8 emotions (anger, anticipation, joy, trust, fear, surprise, sadness, disgust)
-- Process entries in batches to manage API rate limits
-- Parse and structure API responses into your data format
+- Process entries in batches of 30-50 to stay within API token limits
+- Group by year for logical processing units and checkpointing
+- Focus on Plutchik's 8 emotions with 0.0-1.0 scale
+- Implement proper error handling and retry logic for API calls
+- Save interim results regularly to prevent data loss
+- Maintain original 3,072 dimension embeddings for UMAP processing
 
 #### Phase 1.4: Dimensionality Reduction and Final Data
 **Tasks:**
@@ -360,13 +371,17 @@ def parse_entries(text):
     
     return entries
 
-# 3. OpenAI API integration
+# 3. OpenAI API integration with batch processing
 import openai
+import time
+from tqdm import tqdm
 
-def analyze_entry(entry_text):
-    # Sentiment analysis with GPT-4o mini
+def analyze_entries_batch(entries_batch):
+    # Prepare batch of entries for analysis
+    entries_text = "\n\n".join([f"[{entry['id']}]: {entry['text']}" for entry in entries_batch])
+    
     sentiment_prompt = f"""
-    Analyze the following journal entry from Andy Warhol and rate the intensity of each emotion on a scale of 0.0 to 1.0:
+    Analyze the following journal entries from Andy Warhol and rate the intensity of each emotion on a scale of 0.0 to 1.0:
     - Anger
     - Anticipation
     - Joy
@@ -376,20 +391,94 @@ def analyze_entry(entry_text):
     - Sadness
     - Disgust
     
-    Entry: {entry_text}
+    Return a JSON array where each object contains an "id" field matching the entry ID and an "emotions" object with the emotions as keys.
     
-    Return only a JSON object with the emotions as keys and values as the intensity.
+    Entries:
+    {entries_text}
     """
     
-    # API call implementation...
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You analyze text and return JSON."},
+                {"role": "user", "content": sentiment_prompt}
+            ]
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"Error in API call: {e}")
+        time.sleep(20)  # Simple backoff
+        return None
+
+def get_embeddings_batch(texts):
+    # Process embeddings in batches
+    try:
+        response = openai.embeddings.create(
+            model="text-embedding-3-large",
+            input=texts
+        )
+        return [item.embedding for item in response.data]
+    except Exception as e:
+        print(f"Error in embeddings API call: {e}")
+        time.sleep(20)  # Simple backoff
+        return None
+
+# Process entries by year
+entries_by_year = {}  # Group entries by year
+for entry in entries:
+    year = entry['date'].split('-')[0]
+    if year not in entries_by_year:
+        entries_by_year[year] = []
+    entries_by_year[year].append(entry)
+
+# Process each year's entries
+all_processed_entries = []
+for year, year_entries in entries_by_year.items():
+    print(f"Processing {len(year_entries)} entries from {year}...")
     
-    # Generate embeddings
-    embedding_response = openai.embeddings.create(
-        model="text-embedding-3-large",
-        input=entry_text
-    )
-    
-    return sentiment, embedding_response.data[0].embedding
+    # Process in smaller batches
+    batch_size = 30  # Adjust based on average entry length
+    for i in range(0, len(year_entries), batch_size):
+        current_batch = year_entries[i:i+batch_size]
+        
+        # 1. Get emotion analysis
+        emotions_results = analyze_entries_batch(current_batch)
+        if not emotions_results:
+            continue
+            
+        # 2. Get embeddings (smaller batches for embeddings if needed)
+        embedding_texts = [entry["text"] for entry in current_batch]
+        embedding_batch_size = 10
+        all_embeddings = []
+        
+        for j in range(0, len(embedding_texts), embedding_batch_size):
+            batch_texts = embedding_texts[j:j+embedding_batch_size]
+            batch_embeddings = get_embeddings_batch(batch_texts)
+            if batch_embeddings:
+                all_embeddings.extend(batch_embeddings)
+        
+        # 3. Combine results
+        for idx, entry in enumerate(current_batch):
+            if idx < len(emotions_results) and idx < len(all_embeddings):
+                entry_emotions = next((e for e in emotions_results if e["id"] == entry["id"]), None)
+                if entry_emotions:
+                    processed_entry = entry.copy()
+                    processed_entry["emotions"] = entry_emotions["emotions"]
+                    processed_entry["embedding"] = all_embeddings[idx]
+                    all_processed_entries.append(processed_entry)
+        
+        # Save interim results for this batch
+        with open(f'warhol_{year}_batch_{i}.json', 'w') as f:
+            json.dump(all_processed_entries, f)
+            
+    # Save year results
+    with open(f'warhol_{year}_processed.json', 'w') as f:
+        json.dump(all_processed_entries, f)
+
+# Final merge into one file
+with open('warhol_complete.json', 'w') as f:
+    json.dump({"entries": all_processed_entries}, f)
 
 # 4. Dimensionality reduction
 from umap import UMAP
