@@ -1,2 +1,3 @@
 output/warhol_all_processed.json filter=lfs diff=lfs merge=lfs -text
 output/*.json filter=lfs diff=lfs merge=lfs -text
+*.json filter=lfs diff=lfs merge=lfs -text
