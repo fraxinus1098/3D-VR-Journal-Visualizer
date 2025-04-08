@@ -29,6 +29,12 @@ class WarholJournalViz {
     this.journalEntries = [];
     this.orbObjects = new Map(); // Map entry IDs to Three.js objects
     
+    // Minimap variables
+    this.minimapCamera = null;
+    this.minimapScene = null;
+    this.minimapRenderer = null;
+    this.playerMarker = null;
+    
     this.init();
   }
 
@@ -44,7 +50,8 @@ class WarholJournalViz {
       0.1,                                   // Near clipping plane
       1000                                   // Far clipping plane
     );
-    this.camera.position.set(0, 1.6, 3);     // Position camera at eye level
+    // Camera will be positioned correctly after data is loaded
+    this.camera.position.set(0, 1.6, 3);     // Initial position at eye level
     
     // Create a renderer
     this.renderer = new THREE.WebGLRenderer({ 
@@ -73,6 +80,9 @@ class WarholJournalViz {
     
     // Add a simple test cube to confirm the scene is working
     this.addTestCube();
+    
+    // Set up minimap
+    this.setupMinimap();
     
     // Load data and create visualization
     this.loadData();
@@ -394,6 +404,17 @@ class WarholJournalViz {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    
+    // Update minimap if it exists
+    if (this.minimapCamera) {
+      const aspect = window.innerWidth / window.innerHeight;
+      const viewSize = 50;
+      this.minimapCamera.left = -viewSize * aspect / 4;
+      this.minimapCamera.right = viewSize * aspect / 4;
+      this.minimapCamera.top = viewSize / 4;
+      this.minimapCamera.bottom = -viewSize / 4;
+      this.minimapCamera.updateProjectionMatrix();
+    }
   }
   
   animate(timestamp, frame) {
@@ -407,8 +428,240 @@ class WarholJournalViz {
       this.processControllerInput();
     }
     
+    // Update minimap
+    this.updateMinimap();
+    
     // Render the scene
     this.renderer.render(this.scene, this.camera);
+  }
+  
+  /**
+   * Set up the minimap for navigation
+   */
+  setupMinimap() {
+    // Create minimap scene
+    this.minimapScene = new THREE.Scene();
+    this.minimapScene.background = new THREE.Color(0x000022);
+    
+    // Create orthographic camera for top-down view
+    const aspect = window.innerWidth / window.innerHeight;
+    const viewSize = 50;
+    this.minimapCamera = new THREE.OrthographicCamera(
+      -viewSize * aspect / 4, viewSize * aspect / 4,
+      viewSize / 4, -viewSize / 4,
+      0.1, 1000
+    );
+    this.minimapCamera.position.set(0, 50, 0);
+    this.minimapCamera.lookAt(0, 0, 0);
+    this.minimapCamera.rotation.z = Math.PI; // Proper orientation
+    
+    // Create minimap renderer
+    this.minimapRenderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true
+    });
+    this.minimapRenderer.setSize(200, 200);
+    this.minimapRenderer.domElement.style.position = 'absolute';
+    this.minimapRenderer.domElement.style.bottom = '20px';
+    this.minimapRenderer.domElement.style.right = '20px';
+    this.minimapRenderer.domElement.style.borderRadius = '100px';
+    this.minimapRenderer.domElement.style.border = '2px solid white';
+    document.getElementById('app').appendChild(this.minimapRenderer.domElement);
+    
+    // Create elevation gauge for 3D navigation
+    this.setupElevationGauge();
+    
+    // Create player marker for minimap
+    const markerGeometry = new THREE.ConeGeometry(0.8, 2, 4);
+    const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    this.playerMarker = new THREE.Mesh(markerGeometry, markerMaterial);
+    this.playerMarker.rotation.x = Math.PI / 2;
+    this.minimapScene.add(this.playerMarker);
+    
+    // Add a vertical line from the player marker to indicate elevation
+    const lineMaterial = new THREE.LineBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.7 });
+    const lineGeometry = new THREE.BufferGeometry();
+    const linePositions = new Float32Array(6); // 2 points * 3 coordinates
+    lineGeometry.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+    this.elevationLine = new THREE.Line(lineGeometry, lineMaterial);
+    this.minimapScene.add(this.elevationLine);
+    
+    // Add grid to help with spatial orientation
+    const gridHelper = new THREE.GridHelper(100, 10, 0x555555, 0x222222);
+    gridHelper.rotation.x = Math.PI / 2; // Make it visible from top-down view
+    this.minimapScene.add(gridHelper);
+    
+    // Add cardinal direction indicators
+    this.addCardinalDirections();
+    
+    // Add ambient light to minimap scene
+    const light = new THREE.AmbientLight(0xffffff, 1);
+    this.minimapScene.add(light);
+    
+    // Add stats display for current position
+    this.setupCoordinateDisplay();
+  }
+  
+  /**
+   * Set up the elevation gauge to show Y-axis position
+   */
+  setupElevationGauge() {
+    // Create a vertical gauge container
+    const gaugeContainer = document.createElement('div');
+    gaugeContainer.style.position = 'absolute';
+    gaugeContainer.style.top = '20px';
+    gaugeContainer.style.right = '20px';
+    gaugeContainer.style.width = '20px';
+    gaugeContainer.style.height = '200px';
+    gaugeContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    gaugeContainer.style.borderRadius = '10px';
+    gaugeContainer.style.border = '1px solid white';
+    
+    // Create the elevation indicator
+    this.elevationIndicator = document.createElement('div');
+    this.elevationIndicator.style.position = 'absolute';
+    this.elevationIndicator.style.width = '16px';
+    this.elevationIndicator.style.height = '10px';
+    this.elevationIndicator.style.backgroundColor = 'red';
+    this.elevationIndicator.style.borderRadius = '5px';
+    this.elevationIndicator.style.left = '2px';
+    this.elevationIndicator.style.bottom = '2px'; // Will be updated based on camera y position
+    
+    // Add labels for top and bottom
+    const topLabel = document.createElement('div');
+    topLabel.style.position = 'absolute';
+    topLabel.style.top = '-20px';
+    topLabel.style.width = '100%';
+    topLabel.style.textAlign = 'center';
+    topLabel.style.color = 'white';
+    topLabel.style.fontSize = '12px';
+    topLabel.textContent = 'Top';
+    
+    const bottomLabel = document.createElement('div');
+    bottomLabel.style.position = 'absolute';
+    bottomLabel.style.bottom = '-20px';
+    bottomLabel.style.width = '100%';
+    bottomLabel.style.textAlign = 'center';
+    bottomLabel.style.color = 'white';
+    bottomLabel.style.fontSize = '12px';
+    bottomLabel.textContent = 'Bottom';
+    
+    // Add to DOM
+    gaugeContainer.appendChild(this.elevationIndicator);
+    gaugeContainer.appendChild(topLabel);
+    gaugeContainer.appendChild(bottomLabel);
+    document.getElementById('app').appendChild(gaugeContainer);
+    
+    // Store for later use
+    this.elevationGauge = gaugeContainer;
+    
+    // Store min and max y values for scaling
+    this.yRangeMin = -10;
+    this.yRangeMax = 30;
+  }
+  
+  /**
+   * Add cardinal direction indicators to the minimap
+   */
+  addCardinalDirections() {
+    const distance = 22; // Distance from center
+    const size = 1.5;
+    
+    // Create text geometry for N, S, E, W
+    const directions = [
+      { text: 'N', position: new THREE.Vector3(0, 0, -distance) },
+      { text: 'S', position: new THREE.Vector3(0, 0, distance) },
+      { text: 'E', position: new THREE.Vector3(distance, 0, 0) },
+      { text: 'W', position: new THREE.Vector3(-distance, 0, 0) }
+    ];
+    
+    // Add direction markers using simple boxes
+    directions.forEach(dir => {
+      const markerGeometry = new THREE.BoxGeometry(size, size, size);
+      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+      marker.position.copy(dir.position);
+      this.minimapScene.add(marker);
+      
+      // Add dot above for better visibility
+      const dotGeometry = new THREE.SphereGeometry(size/3, 8, 8);
+      const dotMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+      dot.position.set(dir.position.x, dir.position.y + 2, dir.position.z);
+      this.minimapScene.add(dot);
+    });
+  }
+  
+  /**
+   * Set up coordinate display for debugging and navigation
+   */
+  setupCoordinateDisplay() {
+    this.coordDisplay = document.createElement('div');
+    this.coordDisplay.style.position = 'absolute';
+    this.coordDisplay.style.bottom = '225px';
+    this.coordDisplay.style.right = '20px';
+    this.coordDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    this.coordDisplay.style.color = 'white';
+    this.coordDisplay.style.padding = '5px';
+    this.coordDisplay.style.borderRadius = '5px';
+    this.coordDisplay.style.fontSize = '12px';
+    this.coordDisplay.style.fontFamily = 'monospace';
+    document.getElementById('app').appendChild(this.coordDisplay);
+  }
+  
+  /**
+   * Update the minimap view
+   */
+  updateMinimap() {
+    if (!this.minimapRenderer || !this.playerMarker) return;
+    
+    // Update player marker position from camera
+    this.playerMarker.position.x = this.camera.position.x;
+    this.playerMarker.position.z = this.camera.position.z;
+    
+    // Update player marker rotation from camera
+    const direction = new THREE.Vector3();
+    this.camera.getWorldDirection(direction);
+    this.playerMarker.rotation.y = Math.atan2(direction.x, direction.z);
+    
+    // Update elevation line
+    if (this.elevationLine) {
+      const positions = this.elevationLine.geometry.attributes.position.array;
+      positions[0] = this.camera.position.x; // x1
+      positions[1] = 0;                      // y1 (ground level)
+      positions[2] = this.camera.position.z; // z1
+      positions[3] = this.camera.position.x; // x2
+      positions[4] = 0;                      // y2 (will be updated with scaled height)
+      positions[5] = this.camera.position.z; // z2
+      
+      // Scale the height for better visibility
+      const heightScale = 0.2; // adjust as needed for visibility
+      positions[4] = this.camera.position.y * heightScale;
+      
+      this.elevationLine.geometry.attributes.position.needsUpdate = true;
+    }
+    
+    // Update elevation gauge
+    if (this.elevationIndicator) {
+      // Calculate position percentage in the y range
+      const yRange = this.yRangeMax - this.yRangeMin;
+      const yPercentage = (this.camera.position.y - this.yRangeMin) / yRange;
+      // Clamp between 0 and 1
+      const clampedPercentage = Math.max(0, Math.min(1, yPercentage));
+      // Calculate position in pixels (account for indicator height)
+      const gaugeHeight = 200 - 10; // container height minus indicator height
+      const pixelPosition = clampedPercentage * gaugeHeight;
+      // Update indicator position
+      this.elevationIndicator.style.bottom = `${pixelPosition}px`;
+    }
+    
+    // Update coordinate display
+    if (this.coordDisplay) {
+      this.coordDisplay.textContent = `X: ${this.camera.position.x.toFixed(1)} | Y: ${this.camera.position.y.toFixed(1)} | Z: ${this.camera.position.z.toFixed(1)}`;
+    }
+    
+    // Render minimap
+    this.minimapRenderer.render(this.minimapScene, this.minimapCamera);
   }
   
   /**
@@ -448,12 +701,96 @@ class WarholJournalViz {
     this.orbGroup = new THREE.Group();
     this.scene.add(this.orbGroup);
     
+    // Prepare to calculate the average position for camera positioning
+    let sumX = 0, sumY = 0, sumZ = 0;
+    let minY = Infinity, maxY = -Infinity;
+    let count = 0;
+    
     // Create orbs for each journal entry
     this.journalEntries.forEach(entry => {
       const orb = this.createOrb(entry);
       this.orbGroup.add(orb);
       this.orbObjects.set(entry.id, orb);
+      
+      // Add orb position to sum for average calculation
+      sumX += entry.coordinates.x;
+      sumY += entry.coordinates.y;
+      sumZ += entry.coordinates.z;
+      count++;
+      
+      // Track min/max Y values for elevation gauge scaling
+      minY = Math.min(minY, entry.coordinates.y);
+      maxY = Math.max(maxY, entry.coordinates.y);
+      
+      // Add representation to minimap with height-based color variation
+      if (this.minimapScene) {
+        // Use height to determine color intensity/variation
+        const normalizedHeight = (entry.coordinates.y - minY) / (maxY - minY || 1);
+        
+        // Create dot with elevation pillar
+        const dotGeometry = new THREE.SphereGeometry(0.2, 8, 8);
+        const emotionColor = this.getEmotionColor(this.getDominantEmotion(entry.emotions));
+        
+        // Adjust brightness based on height
+        const heightAdjustedColor = new THREE.Color(emotionColor);
+        // Make higher points brighter, lower points darker
+        const brightness = 0.5 + (normalizedHeight * 0.5);
+        heightAdjustedColor.multiplyScalar(brightness);
+        
+        const dotMaterial = new THREE.MeshBasicMaterial({ color: heightAdjustedColor });
+        const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+        
+        // Position the dot at the X,Z coordinates but at ground level
+        dot.position.set(entry.coordinates.x, 0, entry.coordinates.z);
+        this.minimapScene.add(dot);
+        
+        // Add vertical line to indicate height
+        if (Math.abs(entry.coordinates.y) > 1) { // Only add lines for points not at ground level
+          const lineMaterial = new THREE.LineBasicMaterial({ 
+            color: heightAdjustedColor,
+            transparent: true,
+            opacity: 0.3 + (normalizedHeight * 0.3) // Higher points more visible
+          });
+          
+          const lineGeometry = new THREE.BufferGeometry();
+          const lineHeight = Math.max(0.1, Math.abs(entry.coordinates.y) * 0.1); // Scale height for visibility
+          const scaled_y = entry.coordinates.y > 0 ? lineHeight : -lineHeight;
+          
+          const vertices = new Float32Array([
+            entry.coordinates.x, 0, entry.coordinates.z, // ground point
+            entry.coordinates.x, scaled_y, entry.coordinates.z  // elevated point
+          ]);
+          
+          lineGeometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+          const line = new THREE.Line(lineGeometry, lineMaterial);
+          this.minimapScene.add(line);
+        }
+      }
     });
+    
+    // Calculate average position
+    if (count > 0) {
+      const avgX = sumX / count;
+      const avgY = sumY / count;
+      const avgZ = sumZ / count;
+      
+      // Position camera near the cluster center with a small offset
+      this.camera.position.set(avgX, avgY + 1.6, avgZ + 5);
+      this.camera.lookAt(avgX, avgY, avgZ);
+      
+      console.log(`Positioned camera at: ${avgX.toFixed(2)}, ${(avgY + 1.6).toFixed(2)}, ${(avgZ + 5).toFixed(2)}`);
+      
+      // Update minimap camera position
+      if (this.minimapCamera) {
+        this.minimapCamera.position.set(avgX, 50, avgZ);
+        this.minimapCamera.lookAt(avgX, 0, avgZ);
+      }
+      
+      // Update elevation gauge range
+      this.yRangeMin = minY - 2;
+      this.yRangeMax = maxY + 2;
+      console.log(`Y range for elevation gauge: ${this.yRangeMin.toFixed(2)} to ${this.yRangeMax.toFixed(2)}`);
+    }
     
     // Hide test cube if it exists
     if (this.testCube) {
