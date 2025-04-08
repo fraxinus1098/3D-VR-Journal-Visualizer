@@ -9,6 +9,8 @@ import EmotionLegend from './ui/EmotionLegend.js';
 import Notifications from './ui/Notifications.js';
 import OrbVisualizer from './visualizers/OrbVisualizer.js';
 import InteractionManager from './utils/InteractionManager.js';
+import AudioSystem from './utils/AudioSystem.js';
+import AudioControls from './ui/AudioControls.js';
 
 /**
  * Main class for the WebXR application
@@ -31,6 +33,11 @@ class WarholJournalViz {
     this.emotionLegend = null;
     this.entryPanel = null;
     this.notifications = null;
+    this.audioControls = null;
+    
+    // Audio system
+    this.audioSystem = null;
+    this.audioInitialized = false;
     
     // Data management
     this.dataLoader = new DataLoader();
@@ -73,6 +80,12 @@ class WarholJournalViz {
     // Set up notifications
     this.notifications = new Notifications();
     
+    // Create audio system
+    this.audioSystem = new AudioSystem();
+    
+    // Create audio controls (will be shown later)
+    this.audioControls = new AudioControls(this.camera, this.scene, this.audioSystem);
+    
     // Create orb visualizer
     this.orbVisualizer = new OrbVisualizer(this.scene);
     
@@ -88,6 +101,14 @@ class WarholJournalViz {
     this.vrController = new VRController(this.scene, this.renderer, this.camera, {
       onSelect: (object) => this.interactionManager.handleSelection(object),
       onRayIntersection: (controller, intersection, object) => {
+        // Check for audio controls interaction
+        if (this.audioControls && this.audioControls.visible) {
+          const audioInteraction = this.audioControls.handleInteraction(intersection);
+          if (audioInteraction) {
+            return;
+          }
+        }
+        
         if (this.entryPanel) {
           const interaction = this.entryPanel.checkInteraction(intersection);
           if (interaction) {
@@ -103,6 +124,14 @@ class WarholJournalViz {
     // Set up desktop controls
     this.desktopControls = new DesktopControls(this.camera, this.renderer.domElement, {
       onSelect: (intersection) => {
+        // Check for audio controls interaction
+        if (this.audioControls && this.audioControls.visible && intersection) {
+          const audioInteraction = this.audioControls.handleInteraction(intersection);
+          if (audioInteraction) {
+            return;
+          }
+        }
+        
         if (intersection && this.entryPanel) {
           const interaction = this.entryPanel.checkInteraction(intersection);
           if (interaction) {
@@ -117,6 +146,20 @@ class WarholJournalViz {
         }
       },
       onHover: (intersection) => {
+        // Check for audio controls interaction
+        if (this.audioControls && this.audioControls.visible && intersection) {
+          const audioObjects = [
+            this.audioControls.muteButton,
+            this.audioControls.sliderBackground,
+            this.audioControls.sliderHandle
+          ];
+          
+          if (intersection.object && audioObjects.includes(intersection.object)) {
+            this.renderer.domElement.style.cursor = 'pointer';
+            return;
+          }
+        }
+        
         if (intersection && this.entryPanel) {
           const interaction = this.entryPanel.checkInteraction(intersection);
           if (interaction) {
@@ -155,8 +198,144 @@ class WarholJournalViz {
     // Set up event listeners
     window.addEventListener('resize', this.onWindowResize.bind(this));
     
+    // Add audio initialization listener
+    document.addEventListener('click', this.initAudioOnInteraction.bind(this), { once: true });
+    document.addEventListener('keydown', this.initAudioOnInteraction.bind(this), { once: true });
+    
+    // Add keyboard controls for audio
+    document.addEventListener('keydown', this.handleKeyboardShortcuts.bind(this));
+    
     // Start the animation loop using the built-in WebXR animation loop
     this.renderer.setAnimationLoop(this.animate.bind(this));
+  }
+  
+  /**
+   * Initialize audio after first user interaction (required by browsers)
+   */
+  async initAudioOnInteraction() {
+    if (this.audioInitialized) return;
+    
+    try {
+      console.log('Initializing audio system after user interaction');
+      await this.audioSystem.init();
+      
+      // Resume AudioContext if suspended
+      if (this.audioSystem.audioContext.state === 'suspended') {
+        console.log('AudioContext suspended - attempting to resume');
+        await this.audioSystem.audioContext.resume();
+      }
+      
+      // Calculate emotion centers first
+      if (this.journalEntries && this.journalEntries.length > 0) {
+        console.log('Calculating emotion centers for audio');
+        this.audioSystem.calculateEmotionCenters(this.journalEntries);
+      } else {
+        console.warn('No journal entries available for emotion center calculation');
+      }
+      
+      // Start playing all emotion sounds (initially at zero volume)
+      console.log('Starting audio playback');
+      this.audioSystem.playAllEmotionSounds();
+      
+      // Force an immediate audio mix update
+      const cameraPosition = new THREE.Vector3();
+      this.camera.getWorldPosition(cameraPosition);
+      this.audioSystem.updateAudioMix(cameraPosition);
+      
+      // Show brief notification
+      this.notifications.show('Audio system initialized. Press "A" to toggle audio controls.');
+      
+      // Show audio controls briefly
+      if (this.audioControls) {
+        this.audioControls.show();
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          this.audioControls.hide();
+        }, 5000);
+      }
+      
+      this.audioInitialized = true;
+      
+      // Add click handler for browsers that require click to start audio
+      document.addEventListener('click', () => {
+        if (this.audioSystem && this.audioSystem.audioContext.state === 'suspended') {
+          console.log('Resuming suspended AudioContext after click');
+          this.audioSystem.audioContext.resume().then(() => {
+            console.log('AudioContext resumed successfully');
+            this.audioSystem.playAllEmotionSounds();
+          });
+        }
+      }, { once: true });
+      
+    } catch (error) {
+      console.error('Failed to initialize audio:', error);
+      this.notifications.show('Failed to initialize audio. Press "R" to retry.');
+    }
+  }
+  
+  /**
+   * Handle keyboard shortcuts
+   * @param {KeyboardEvent} event - The keyboard event
+   */
+  handleKeyboardShortcuts(event) {
+    // 'A' key to toggle audio controls
+    if (event.key.toLowerCase() === 'a') {
+      if (this.audioControls) {
+        this.audioControls.toggle();
+      }
+    }
+    
+    // 'M' key to toggle mute
+    if (event.key.toLowerCase() === 'm') {
+      if (this.audioSystem && this.audioInitialized) {
+        const muted = this.audioSystem.toggleMute();
+        this.notifications.show(`Audio ${muted ? 'muted' : 'unmuted'}`);
+        
+        if (this.audioControls) {
+          this.audioControls.updateSpeakerIcon();
+        }
+      }
+    }
+    
+    // 'R' key to retry audio initialization
+    if (event.key.toLowerCase() === 'r' && !this.audioInitialized) {
+      this.initAudioOnInteraction();
+    }
+    
+    // 'D' key to toggle debug visualization
+    if (event.key.toLowerCase() === 'd') {
+      this.addAudioDebugElements();
+      this.notifications.show('Added audio debug elements');
+    }
+    
+    // '1-8' keys to play individual emotion sounds at max volume for testing
+    if (this.audioSystem && this.audioInitialized && event.key >= '1' && event.key <= '8') {
+      const index = parseInt(event.key) - 1;
+      const emotions = ['joy', 'trust', 'fear', 'surprise', 'sadness', 'disgust', 'anger', 'anticipation'];
+      
+      if (index >= 0 && index < emotions.length) {
+        const emotion = emotions[index];
+        
+        // Set all volumes to zero except the selected one
+        Object.keys(this.audioSystem.emotionSounds).forEach(e => {
+          if (this.audioSystem.emotionSounds[e] && this.audioSystem.emotionSounds[e].gain) {
+            this.audioSystem.emotionSounds[e].gain.gain.value = (e === emotion) ? 0.8 : 0;
+          }
+        });
+        
+        this.notifications.show(`Playing only ${emotion} sound`);
+      }
+    }
+    
+    // '0' key to reset audio mix to distance-based
+    if (this.audioSystem && this.audioInitialized && event.key === '0') {
+      // Reset to normal distance-based mixing
+      const cameraPosition = new THREE.Vector3();
+      this.camera.getWorldPosition(cameraPosition);
+      this.audioSystem.updateAudioMix(cameraPosition);
+      this.notifications.show('Reset to normal audio mixing');
+    }
   }
   
   addLighting() {
@@ -231,6 +410,18 @@ class WarholJournalViz {
       this.entryPanel.updatePosition();
     }
     
+    // Update audio controls position
+    if (this.audioControls && this.audioControls.visible) {
+      this.audioControls.updatePosition();
+    }
+    
+    // Update audio mix based on camera position
+    if (this.audioSystem && this.audioInitialized) {
+      const cameraPosition = new THREE.Vector3();
+      this.camera.getWorldPosition(cameraPosition);
+      this.audioSystem.updateAudioMix(cameraPosition);
+    }
+    
     // Render the scene
     this.renderer.render(this.scene, this.camera);
   }
@@ -265,6 +456,19 @@ class WarholJournalViz {
       }
     }
     
+    // Add audio control interactive elements
+    if (this.audioControls && this.audioControls.visible) {
+      if (this.audioControls.muteButton) {
+        interactiveObjects.push(this.audioControls.muteButton);
+      }
+      if (this.audioControls.sliderBackground) {
+        interactiveObjects.push(this.audioControls.sliderBackground);
+      }
+      if (this.audioControls.sliderHandle) {
+        interactiveObjects.push(this.audioControls.sliderHandle);
+      }
+    }
+    
     return interactiveObjects;
   }
   
@@ -294,6 +498,11 @@ class WarholJournalViz {
    */
   handleSelection(selectedObj) {
     if (!selectedObj) return;
+    
+    // Play selection sound
+    if (this.audioSystem && this.audioInitialized) {
+      this.audioSystem.playSelectSound();
+    }
     
     if (selectedObj.userData.type === 'journal-entry') {
       // Highlight related entries
@@ -437,9 +646,74 @@ class WarholJournalViz {
     // Set up emotion legend
     this.emotionLegend = new EmotionLegend(this.camera, this.scene);
     
+    // Set up audio emotion centers if audio system is available 
+    // NOTE: This is now done in initAudioOnInteraction to ensure proper initialization order
+    
     // Hide test cube if it exists
     if (this.testCube) {
       this.testCube.visible = false;
+    }
+    
+    // Add some debug elements for testing audio
+    this.addAudioDebugElements();
+  }
+  
+  /**
+   * Add debug elements to help with audio testing
+   */
+  addAudioDebugElements() {
+    // Add emotion center spheres to visualize audio positions
+    if (this.audioSystem && Object.keys(this.audioSystem.emotionCenters).length > 0) {
+      const emotionColors = {
+        'joy': 0xFFFF00, // Yellow
+        'trust': 0x00FF00, // Green
+        'fear': 0xFF00FF, // Magenta
+        'surprise': 0x00FFFF, // Cyan
+        'sadness': 0x0000FF, // Blue
+        'disgust': 0xFF00AA, // Pink
+        'anger': 0xFF0000, // Red
+        'anticipation': 0xFF8800 // Orange
+      };
+      
+      Object.entries(this.audioSystem.emotionCenters).forEach(([emotion, position]) => {
+        const geometry = new THREE.SphereGeometry(0.5, 16, 16);
+        const material = new THREE.MeshBasicMaterial({ 
+          color: emotionColors[emotion] || 0xFFFFFF,
+          transparent: true,
+          opacity: 0.5,
+          wireframe: true
+        });
+        
+        const sphere = new THREE.Mesh(geometry, material);
+        sphere.position.copy(position);
+        
+        // Add text label
+        const canvas = document.createElement('canvas');
+        canvas.width = 256;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(emotion, 128, 64);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const labelGeometry = new THREE.PlaneGeometry(2, 1);
+        const labelMaterial = new THREE.MeshBasicMaterial({ 
+          map: texture, 
+          transparent: true,
+          depthTest: false,
+          side: THREE.DoubleSide
+        });
+        
+        const label = new THREE.Mesh(labelGeometry, labelMaterial);
+        label.position.set(0, 1.0, 0);
+        
+        sphere.add(label);
+        this.scene.add(sphere);
+        
+        console.log(`Added debug marker for ${emotion} at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
+      });
     }
   }
 }
