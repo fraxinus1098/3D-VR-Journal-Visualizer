@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
+import DataLoader from './utils/data-loader.js';
 
 // Main class for the WebXR application
 class WarholJournalViz {
@@ -22,6 +23,11 @@ class WarholJournalViz {
     this.mouseSensitivity = 0.002;
     this.previousMousePosition = { x: 0, y: 0 };
     this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
+    
+    // Data and visualization variables
+    this.dataLoader = new DataLoader();
+    this.journalEntries = [];
+    this.orbObjects = new Map(); // Map entry IDs to Three.js objects
     
     this.init();
   }
@@ -68,11 +74,11 @@ class WarholJournalViz {
     // Add a simple test cube to confirm the scene is working
     this.addTestCube();
     
+    // Load data and create visualization
+    this.loadData();
+    
     // Set up event listeners
     window.addEventListener('resize', this.onWindowResize.bind(this));
-    
-    // Hide loading screen
-    document.getElementById('loading').style.display = 'none';
     
     // Start the animation loop using the built-in WebXR animation loop
     this.renderer.setAnimationLoop(this.animate.bind(this));
@@ -301,13 +307,21 @@ class WarholJournalViz {
   }
   
   handleRayIntersection(controller) {
-    // This will be expanded in Phase 3.2 with more detailed interaction
-    // Basic implementation for Phase 2.3
+    // Set raycaster from controller position and orientation
     this.tempMatrix.identity().extractRotation(controller.matrixWorld);
     this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
     
-    // Detect interactive objects will be implemented in later phases
+    // Get intersections with interactive objects
+    const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+    
+    // Find first interactive object
+    const interactive = intersects.find(intersect => 
+      intersect.object.userData && 
+      intersect.object.userData.interactive
+    );
+    
+    return interactive;
   }
   
   processControllerInput() {
@@ -361,51 +375,181 @@ class WarholJournalViz {
   
   addTestCube() {
     // Create a simple cube to verify the scene is working
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const geometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
     const material = new THREE.MeshStandardMaterial({ 
-      color: 0x00aaff,
-      emissive: 0x003366,
+      color: 0x00ff00,
+      emissive: 0x003300,
       emissiveIntensity: 0.5,
       metalness: 0.3,
       roughness: 0.7
     });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(0, 1.6, -3); // Position in front of the camera
-    this.scene.add(cube);
-    
-    // Store reference to animate it
-    this.testCube = cube;
+    this.testCube = new THREE.Mesh(geometry, material);
+    this.testCube.position.set(0, 1.6, -2); // Position in front of the camera
+    this.testCube.userData.interactive = true;
+    this.testCube.userData.type = 'test-cube';
+    this.scene.add(this.testCube);
   }
   
   onWindowResize() {
-    // Update camera aspect ratio and renderer size when window is resized
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
   
   animate(timestamp, frame) {
-    // Process desktop controls when not in VR
+    // Process desktop controls if not in VR
     if (!this.renderer.xr.isPresenting) {
       this.processDesktopControls();
     }
-    // Process controller input for movement in VR
-    else if (frame) {
-      this.processControllerInput();
-    }
     
-    // Animate test cube
-    if (this.testCube) {
-      this.testCube.rotation.x += 0.01;
-      this.testCube.rotation.y += 0.01;
+    // Process controller input in VR
+    if (this.renderer.xr.isPresenting) {
+      this.processControllerInput();
     }
     
     // Render the scene
     this.renderer.render(this.scene, this.camera);
   }
+  
+  /**
+   * Load journal data and create visualization
+   */
+  async loadData() {
+    try {
+      document.getElementById('loading').style.display = 'block';
+      document.getElementById('loading-text').textContent = 'Loading journal data...';
+      
+      // Load the full dataset
+      const data = await this.dataLoader.loadData('/data/warhol_final.json');
+      this.journalEntries = data.entries;
+      
+      // Create visualization once data is loaded
+      this.createVisualization();
+      
+      document.getElementById('loading').style.display = 'none';
+    } catch (error) {
+      console.error('Error loading data:', error);
+      document.getElementById('loading-text').textContent = 'Error loading data. Please refresh and try again.';
+    }
+  }
+  
+  /**
+   * Create the 3D visualization of journal entries
+   */
+  createVisualization() {
+    if (!this.journalEntries || this.journalEntries.length === 0) {
+      console.warn('No journal entries to visualize');
+      return;
+    }
+    
+    console.log(`Creating visualization for ${this.journalEntries.length} entries`);
+    
+    // Create a group to hold all orbs
+    this.orbGroup = new THREE.Group();
+    this.scene.add(this.orbGroup);
+    
+    // Create orbs for each journal entry
+    this.journalEntries.forEach(entry => {
+      const orb = this.createOrb(entry);
+      this.orbGroup.add(orb);
+      this.orbObjects.set(entry.id, orb);
+    });
+    
+    // Hide test cube if it exists
+    if (this.testCube) {
+      this.testCube.visible = false;
+    }
+  }
+  
+  /**
+   * Create a single orb representing a journal entry
+   * @param {Object} entry - Journal entry data
+   * @returns {THREE.Mesh} - The created orb mesh
+   */
+  createOrb(entry) {
+    // Determine radius based on emotional intensity
+    const emotionValues = Object.values(entry.emotions);
+    const emotionalIntensity = Math.max(...emotionValues);
+    const radius = 0.1 + (emotionalIntensity * 0.1); // Base size + emotion-based scaling
+    
+    // Create sphere geometry with detail proportional to size
+    const segments = Math.max(16, Math.floor(radius * 100));
+    const geometry = new THREE.SphereGeometry(radius, segments, segments);
+    
+    // Determine color based on dominant emotion
+    const dominantEmotion = this.getDominantEmotion(entry.emotions);
+    const color = this.getEmotionColor(dominantEmotion);
+    
+    // Create material with emissive properties for glow effect
+    const material = new THREE.MeshStandardMaterial({
+      color: color,
+      emissive: color,
+      emissiveIntensity: 0.5,
+      roughness: 0.7,
+      metalness: 0.3
+    });
+    
+    // Create the mesh and position it based on the entry's coordinates
+    const orb = new THREE.Mesh(geometry, material);
+    
+    // Position the orb according to the entry's coordinates
+    orb.position.set(
+      entry.coordinates.x,
+      entry.coordinates.y,
+      entry.coordinates.z
+    );
+    
+    // Store the entry data with the orb for interaction
+    orb.userData.entry = entry;
+    orb.userData.interactive = true;
+    orb.userData.type = 'journal-entry';
+    
+    return orb;
+  }
+  
+  /**
+   * Determine the dominant emotion in an emotion object
+   * @param {Object} emotions - Object with emotion names as keys and intensities as values
+   * @returns {string} - The name of the dominant emotion
+   */
+  getDominantEmotion(emotions) {
+    let maxIntensity = 0;
+    let dominantEmotion = 'neutral';
+    
+    for (const [emotion, intensity] of Object.entries(emotions)) {
+      if (intensity > maxIntensity) {
+        maxIntensity = intensity;
+        dominantEmotion = emotion;
+      }
+    }
+    
+    return dominantEmotion;
+  }
+  
+  /**
+   * Get a color for an emotion based on Plutchik's wheel
+   * @param {string} emotion - Emotion name
+   * @returns {THREE.Color} - Color for the emotion
+   */
+  getEmotionColor(emotion) {
+    // Define colors based on Plutchik's wheel
+    const emotionColors = {
+      joy: 0xFFFF00,         // Yellow
+      trust: 0x00FF00,       // Green
+      fear: 0x00FF00,        // Green (darker shade)
+      surprise: 0x00FFFF,    // Cyan
+      sadness: 0x0000FF,     // Blue
+      disgust: 0x800080,     // Purple
+      anger: 0xFF0000,       // Red
+      anticipation: 0xFFA500, // Orange
+      neutral: 0xCCCCCC      // Gray
+    };
+    
+    return new THREE.Color(emotionColors[emotion] || emotionColors.neutral);
+  }
 }
 
-// Initialize the application when the DOM is loaded
+// Initialize the application when the DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
   new WarholJournalViz();
 }); 
