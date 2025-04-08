@@ -24,6 +24,19 @@ class WarholJournalViz {
     this.previousMousePosition = { x: 0, y: 0 };
     this.euler = new THREE.Euler(0, 0, 0, 'YXZ');
     
+    // Selection and interaction variables
+    this.selectedObject = null;
+    this.hoveredObject = null;
+    this.originalMaterials = new Map(); // Store original materials for highlighting
+    this.highlightMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0xffffff,
+      emissiveIntensity: 0.5,
+      transparent: true,
+      opacity: 0.8,
+    });
+    this.mouse = new THREE.Vector2(); // For desktop raycasting
+    
     // Data and visualization variables
     this.dataLoader = new DataLoader();
     this.journalEntries = [];
@@ -112,6 +125,16 @@ class WarholJournalViz {
     
     canvas.addEventListener('mousedown', (event) => {
       if (event.button === 0) { // Left mouse button
+        // Check if this is a click (for selection) or a drag (for camera rotation)
+        if (!this.isDragging) {
+          // Update mouse position for raycasting
+          this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+          this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+          
+          // Perform raycasting for selection
+          this.handleDesktopSelection();
+        }
+        
         this.mouseDown = true;
         this.previousMousePosition = {
           x: event.clientX,
@@ -125,6 +148,7 @@ class WarholJournalViz {
     window.addEventListener('mouseup', (event) => {
       if (event.button === 0) { // Left mouse button
         this.mouseDown = false;
+        this.isDragging = false;
         // Restore the cursor
         canvas.style.cursor = 'grab';
       }
@@ -132,28 +156,43 @@ class WarholJournalViz {
     
     canvas.addEventListener('mouseleave', () => {
       this.mouseDown = false;
+      this.isDragging = false;
       canvas.style.cursor = 'grab';
     });
     
-    window.addEventListener('mousemove', (event) => {
+    canvas.addEventListener('mousemove', (event) => {
+      // Update mouse position for hover effects
+      this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      
       if (this.mouseDown) {
         const deltaX = event.clientX - this.previousMousePosition.x;
         const deltaY = event.clientY - this.previousMousePosition.y;
         
-        // Update camera rotation based on mouse movement
-        this.euler.setFromQuaternion(this.camera.quaternion);
-        this.euler.y -= deltaX * this.mouseSensitivity;
-        this.euler.x -= deltaY * this.mouseSensitivity;
+        // If the mouse has moved a significant amount, consider it a drag
+        if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) {
+          this.isDragging = true;
+        }
         
-        // Limit vertical rotation to avoid flipping
-        this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
-        
-        this.camera.quaternion.setFromEuler(this.euler);
+        if (this.isDragging) {
+          // Update camera rotation based on mouse movement
+          this.euler.setFromQuaternion(this.camera.quaternion);
+          this.euler.y -= deltaX * this.mouseSensitivity;
+          this.euler.x -= deltaY * this.mouseSensitivity;
+          
+          // Limit vertical rotation to avoid flipping
+          this.euler.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.euler.x));
+          
+          this.camera.quaternion.setFromEuler(this.euler);
+        }
         
         this.previousMousePosition = {
           x: event.clientX,
           y: event.clientY
         };
+      } else {
+        // Handle hover effect when mouse is not being pressed
+        this.handleDesktopHover();
       }
     });
     
@@ -305,8 +344,16 @@ class WarholJournalViz {
     const controller = event.target;
     controller.userData.isSelecting = false;
     
-    // Handle selection interaction (select object, etc.)
-    // This will be expanded in Phase 3.2
+    // Get the object that was targeted when select started
+    const interactive = this.handleRayIntersection(controller);
+    
+    if (interactive) {
+      const selectedObj = interactive.object;
+      this.handleSelection(selectedObj);
+    } else if (this.selectedObject) {
+      // Deselect if clicking away from objects
+      this.deselectObject();
+    }
   }
   
   onSqueezeStart(event) {
@@ -325,14 +372,46 @@ class WarholJournalViz {
     this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
     
-    // Get intersections with interactive objects
-    const intersects = this.raycaster.intersectObjects(this.scene.children, true);
+    // Get only interactive objects for better performance
+    const interactiveObjects = this.getInteractiveObjects();
+    
+    // Perform raycasting on interactive objects only
+    const intersects = this.raycaster.intersectObjects(interactiveObjects, false);
     
     // Find first interactive object
-    const interactive = intersects.find(intersect => 
-      intersect.object.userData && 
-      intersect.object.userData.interactive
-    );
+    const interactive = intersects.length > 0 ? intersects[0] : null;
+    
+    // Handle hover effects
+    if (interactive) {
+      const hoveredObj = interactive.object;
+      
+      // If a new object is hovered, update hover state
+      if (this.hoveredObject !== hoveredObj) {
+        // Reset previous hovered object
+        if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
+          this.resetObjectMaterial(this.hoveredObject);
+        }
+        
+        // Apply hover effect to new object if it's not selected
+        if (hoveredObj !== this.selectedObject) {
+          this.applyHoverEffect(hoveredObj);
+        }
+        
+        this.hoveredObject = hoveredObj;
+      }
+      
+      // Update controller appearance
+      controller.children[0].scale.z = interactive.distance;
+    } else {
+      // Reset hover state if no intersection
+      if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
+        this.resetObjectMaterial(this.hoveredObject);
+        this.hoveredObject = null;
+      }
+      
+      // Reset controller appearance
+      controller.children[0].scale.z = 5;
+    }
     
     return interactive;
   }
@@ -424,18 +503,32 @@ class WarholJournalViz {
     // Process desktop controls if not in VR
     if (!this.renderer.xr.isPresenting) {
       this.processDesktopControls();
+      
+      // Update hover state for desktop
+      this.handleDesktopHover();
     }
     
     // Process controller input in VR
     if (this.renderer.xr.isPresenting) {
       this.processControllerInput();
+      
+      // Update hover state for controllers
+      for (const controller of this.controllers) {
+        this.handleRayIntersection(controller);
+      }
     }
+    
+    // Update selection pulse animation
+    this.updateSelectionAnimation();
     
     // Update minimap
     this.updateMinimap();
     
     // Update emotion legend position
     this.updateLegendPosition();
+    
+    // Periodic memory cleanup
+    this.cleanupMemory();
     
     // Render the scene
     this.renderer.render(this.scene, this.camera);
@@ -733,31 +826,78 @@ class WarholJournalViz {
   }
   
   /**
-   * Show a notification to the user
+   * Show a notification to the user (optimized version)
    * @param {string} message - The message to display
    */
   showNotification(message) {
-    const notification = document.createElement('div');
-    notification.textContent = message;
-    notification.style.position = 'fixed';
-    notification.style.top = '20px';
-    notification.style.left = '50%';
-    notification.style.transform = 'translateX(-50%)';
-    notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    notification.style.color = 'white';
-    notification.style.padding = '10px 20px';
-    notification.style.borderRadius = '5px';
-    notification.style.zIndex = '1000';
-    notification.style.fontSize = '14px';
+    // Reuse existing notification element if possible
+    let notification = document.getElementById('system-notification');
     
-    document.body.appendChild(notification);
-    
-    // Remove notification after 5 seconds
-    setTimeout(() => {
-      notification.style.opacity = '0';
+    if (!notification) {
+      notification = document.createElement('div');
+      notification.id = 'system-notification';
+      notification.style.position = 'fixed';
+      notification.style.top = '20px';
+      notification.style.left = '50%';
+      notification.style.transform = 'translateX(-50%)';
+      notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      notification.style.color = 'white';
+      notification.style.padding = '10px 20px';
+      notification.style.borderRadius = '5px';
+      notification.style.zIndex = '1000';
+      notification.style.fontSize = '14px';
       notification.style.transition = 'opacity 1s ease';
-      setTimeout(() => notification.remove(), 1000);
+      document.body.appendChild(notification);
+    }
+    
+    // Clear any existing timeout to prevent multiple fades
+    if (this._notificationTimeout) {
+      clearTimeout(this._notificationTimeout);
+    }
+    
+    // Update message and show notification
+    notification.textContent = message;
+    notification.style.opacity = '1';
+    
+    // Hide notification after 5 seconds
+    this._notificationTimeout = setTimeout(() => {
+      notification.style.opacity = '0';
     }, 5000);
+  }
+  
+  /**
+   * Clean up memory periodically to prevent leaks
+   */
+  cleanupMemory() {
+    // Check if it's time to clean up
+    const now = performance.now();
+    if (!this._lastCleanup || now - this._lastCleanup > 30000) { // Every 30 seconds
+      this._lastCleanup = now;
+      
+      // Dispose of unused materials that haven't been used recently
+      const materialsToKeep = new Map();
+      
+      // Keep materials for selected and hovered objects
+      if (this.selectedObject && this.originalMaterials.has(this.selectedObject.uuid)) {
+        materialsToKeep.set(this.selectedObject.uuid, this.originalMaterials.get(this.selectedObject.uuid));
+      }
+      
+      if (this.hoveredObject && this.originalMaterials.has(this.hoveredObject.uuid)) {
+        materialsToKeep.set(this.hoveredObject.uuid, this.originalMaterials.get(this.hoveredObject.uuid));
+      }
+      
+      // Dispose of unused materials
+      this.originalMaterials.forEach((material, uuid) => {
+        if (!materialsToKeep.has(uuid)) {
+          material.dispose();
+        }
+      });
+      
+      // Replace with clean map
+      this.originalMaterials = materialsToKeep;
+      
+      console.log('Memory cleanup completed. Retained materials:', this.originalMaterials.size);
+    }
   }
   
   /**
@@ -1273,6 +1413,282 @@ class WarholJournalViz {
     
     // Make the legend face the camera
     this.legendGroup.lookAt(cameraPosition);
+  }
+
+  /**
+   * Handle desktop mouse selection
+   */
+  handleDesktopSelection() {
+    if (this.renderer.xr.isPresenting) return; // Skip if in VR mode
+    
+    // Update raycaster with mouse position
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    
+    // Get only interactive objects for better performance
+    const interactiveObjects = this.getInteractiveObjects();
+    
+    // Perform raycasting on interactive objects only
+    const intersects = this.raycaster.intersectObjects(interactiveObjects, false);
+    
+    // Find first interactive object
+    const interactive = intersects.length > 0 ? intersects[0] : null;
+    
+    if (interactive) {
+      const selectedObj = interactive.object;
+      this.handleSelection(selectedObj);
+    } else if (this.selectedObject) {
+      // Deselect if clicking away from objects
+      this.deselectObject();
+    }
+  }
+  
+  /**
+   * Handle desktop mouse hover
+   */
+  handleDesktopHover() {
+    if (this.renderer.xr.isPresenting) return; // Skip if in VR mode
+    
+    // Performance optimization: Only check for hover every few frames
+    if (!this._lastHoverCheck) this._lastHoverCheck = 0;
+    this._lastHoverCheck++;
+    if (this._lastHoverCheck % 3 !== 0 && this.hoveredObject) return; // Skip 2 out of 3 frames if something is already hovered
+    
+    // Update raycaster with mouse position
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    
+    // Get only interactive objects for better performance
+    const interactiveObjects = this.getInteractiveObjects();
+    
+    // Perform raycasting on interactive objects only
+    const intersects = this.raycaster.intersectObjects(interactiveObjects, false);
+    
+    // Find first interactive object
+    const interactive = intersects.length > 0 ? intersects[0] : null;
+    
+    if (interactive) {
+      const hoveredObj = interactive.object;
+      
+      // If a new object is hovered, update hover state
+      if (this.hoveredObject !== hoveredObj) {
+        // Reset previous hovered object
+        if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
+          this.resetObjectMaterial(this.hoveredObject);
+        }
+        
+        // Apply hover effect to new object if it's not selected
+        if (hoveredObj !== this.selectedObject) {
+          this.applyHoverEffect(hoveredObj);
+        }
+        
+        this.hoveredObject = hoveredObj;
+        
+        // Update cursor to indicate interactivity
+        this.renderer.domElement.style.cursor = 'pointer';
+      }
+    } else {
+      // Reset hover state if no intersection
+      if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
+        this.resetObjectMaterial(this.hoveredObject);
+        this.hoveredObject = null;
+      }
+      
+      // Reset cursor
+      this.renderer.domElement.style.cursor = 'grab';
+    }
+  }
+  
+  /**
+   * Handle selection of an object (common for VR and desktop)
+   */
+  handleSelection(selectedObj) {
+    // If clicking the already selected object, deselect it
+    if (this.selectedObject === selectedObj) {
+      this.deselectObject();
+      return;
+    }
+    
+    // If there was a previously selected object, reset its material
+    if (this.selectedObject) {
+      this.resetObjectMaterial(this.selectedObject);
+    }
+    
+    // Select new object
+    this.selectedObject = selectedObj;
+    
+    // Store original material and apply selection effect
+    if (!this.originalMaterials.has(selectedObj.uuid)) {
+      this.originalMaterials.set(selectedObj.uuid, selectedObj.material.clone());
+    }
+    
+    // Apply selection effect (more dramatic than hover)
+    this.applySelectionEffect(selectedObj);
+    
+    // Handle entry-specific interactions
+    if (selectedObj.userData.type === 'journal-entry') {
+      // Here we'll eventually display the entry panel (Phase 3.3)
+      console.log('Selected journal entry:', selectedObj.userData.entry.id);
+      
+      // Instead of logging the entire entry which could be large, just log the ID
+      // This prevents large object logging which can freeze the browser
+      
+      // This is just a placeholder for now - we'll implement the panel in Phase 3.3
+      const date = selectedObj.userData.entry.date ? new Date(selectedObj.userData.entry.date).toLocaleDateString() : 'Unknown date';
+      this.showNotification(`Selected: ${date}`);
+    } else if (selectedObj.userData.type === 'test-cube') {
+      console.log('Selected test cube');
+      this.showNotification('Test cube selected!');
+    }
+  }
+  
+  /**
+   * Deselect the currently selected object
+   */
+  deselectObject() {
+    if (this.selectedObject) {
+      this.resetObjectMaterial(this.selectedObject);
+      this.selectedObject = null;
+    }
+  }
+  
+  /**
+   * Apply hover effect to an object
+   */
+  applyHoverEffect(object) {
+    // Optimization: Skip if object is null or undefined
+    if (!object) return;
+    
+    try {
+      // Store original material if not already stored
+      if (!this.originalMaterials.has(object.uuid)) {
+        this.originalMaterials.set(object.uuid, object.material.clone());
+      }
+      
+      // Create a hover material based on the original
+      const hoverMaterial = object.material.clone();
+      
+      // Make it slightly brighter and more emissive
+      hoverMaterial.emissiveIntensity *= 1.5;
+      hoverMaterial.emissive.lerp(new THREE.Color(0xffffff), 0.3);
+      
+      // Apply the hover material
+      object.material = hoverMaterial;
+    } catch (error) {
+      console.error('Error applying hover effect:', error);
+      // Fallback to avoid crashing: use original material if available
+      if (this.originalMaterials.has(object.uuid)) {
+        object.material = this.originalMaterials.get(object.uuid);
+      }
+    }
+  }
+  
+  /**
+   * Apply selection effect to an object
+   */
+  applySelectionEffect(object) {
+    // Optimization: Skip if object is null or undefined
+    if (!object) return;
+    
+    try {
+      // Create a selection material based on the original
+      const selectionMaterial = object.material.clone();
+      
+      // Make it significantly brighter and more emissive with a white tint
+      selectionMaterial.emissiveIntensity *= 2.0;
+      selectionMaterial.emissive.lerp(new THREE.Color(0xffffff), 0.5);
+      
+      // Add pulsing animation (will be updated in animate method)
+      object.userData.pulseAnimation = {
+        active: true,
+        baseEmissive: selectionMaterial.emissiveIntensity,
+        time: 0
+      };
+      
+      // Apply the selection material
+      object.material = selectionMaterial;
+    } catch (error) {
+      console.error('Error applying selection effect:', error);
+      // Fallback to avoid crashing: use original material if available
+      if (this.originalMaterials.has(object.uuid)) {
+        object.material = this.originalMaterials.get(object.uuid);
+      }
+    }
+  }
+  
+  /**
+   * Reset an object's material to its original state
+   */
+  resetObjectMaterial(object) {
+    // Optimization: Skip if object is null or undefined
+    if (!object) return;
+    
+    try {
+      if (this.originalMaterials.has(object.uuid)) {
+        object.material = this.originalMaterials.get(object.uuid);
+        
+        // Remove any animation flags
+        if (object.userData.pulseAnimation) {
+          object.userData.pulseAnimation.active = false;
+        }
+      }
+    } catch (error) {
+      console.error('Error resetting object material:', error);
+    }
+  }
+  
+  /**
+   * Update the selection pulse animation in a more efficient way
+   */
+  updateSelectionAnimation() {
+    if (this.selectedObject && this.selectedObject.userData.pulseAnimation?.active) {
+      try {
+        const animation = this.selectedObject.userData.pulseAnimation;
+        animation.time += 0.05;
+        const pulseFactor = 0.5 + 0.5 * Math.sin(animation.time * 3);
+        this.selectedObject.material.emissiveIntensity = animation.baseEmissive * (0.8 + 0.4 * pulseFactor);
+      } catch (error) {
+        console.error('Error updating selection animation:', error);
+        // Stop the animation if there's an error to prevent continuous errors
+        if (this.selectedObject && this.selectedObject.userData.pulseAnimation) {
+          this.selectedObject.userData.pulseAnimation.active = false;
+        }
+      }
+    }
+  }
+
+  /**
+   * Get a list of all interactive objects in the scene
+   * This is more efficient than checking all scene children during raycasting
+   * @returns {Array} Array of interactive objects
+   */
+  getInteractiveObjects() {
+    // Cache the results to avoid recalculating every frame
+    if (this._interactiveObjects && this._lastInteractiveUpdate 
+        && performance.now() - this._lastInteractiveUpdate < 5000) {
+      return this._interactiveObjects;
+    }
+    
+    // Find all interactive objects
+    const interactiveObjects = [];
+    
+    // Check the test cube if it exists
+    if (this.testCube && this.testCube.userData.interactive) {
+      interactiveObjects.push(this.testCube);
+    }
+    
+    // Check all orbs - use the orbGroup instead of traversing the entire scene
+    if (this.orbGroup) {
+      this.orbGroup.traverse(object => {
+        if (object.userData && object.userData.interactive) {
+          interactiveObjects.push(object);
+        }
+      });
+    }
+    
+    // Cache the results
+    this._interactiveObjects = interactiveObjects;
+    this._lastInteractiveUpdate = performance.now();
+    
+    return interactiveObjects;
   }
 }
 
