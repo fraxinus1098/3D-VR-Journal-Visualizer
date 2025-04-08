@@ -1,7 +1,7 @@
 # Andy Warhol 3D Journal Visualization - Project Masterplan
 
 ## 1. Project Overview
-This project creates an immersive WebXR experience visualizing Andy Warhol's journals as a 3D mindmap viewable on the Oculus Quest 3. The application analyzes ~4,000 journal entries from "The Andy Warhol Diaries" using NLP to create an interactive emotional and thematic landscape that users can explore in VR.
+This project creates an immersive WebXR experience visualizing Andy Warhol's journals as a 3D mindmap viewable on the Oculus Quest 3. The application analyzes ~2,000 journal entries from "The Andy Warhol Diaries" using NLP to create an interactive emotional and thematic landscape that users can explore in VR.
 
 ## 2. Objectives
 - Process and analyze Andy Warhol's journal entries using OpenAI APIs
