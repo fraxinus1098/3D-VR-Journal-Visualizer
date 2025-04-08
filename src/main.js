@@ -84,6 +84,9 @@ class WarholJournalViz {
     // Set up minimap
     this.setupMinimap();
     
+    // Set up emotion color legend
+    this.setupEmotionLegend();
+    
     // Load data and create visualization
     this.loadData();
     
@@ -431,6 +434,9 @@ class WarholJournalViz {
     // Update minimap
     this.updateMinimap();
     
+    // Update emotion legend position
+    this.updateLegendPosition();
+    
     // Render the scene
     this.renderer.render(this.scene, this.camera);
   }
@@ -672,9 +678,31 @@ class WarholJournalViz {
       document.getElementById('loading').style.display = 'block';
       document.getElementById('loading-text').textContent = 'Loading journal data...';
       
-      // Load the full dataset
-      const data = await this.dataLoader.loadData('/data/warhol_final.json');
-      this.journalEntries = data.entries;
+      // First try to load the full dataset
+      try {
+        console.log('Attempting to load the complete dataset...');
+        const data = await this.dataLoader.loadData('/data/warhol_final.json');
+        this.journalEntries = data.entries;
+        console.log(`Successfully loaded ${this.journalEntries.length} entries`);
+      } catch (mainDataError) {
+        console.error('Error loading complete dataset:', mainDataError);
+        
+        // Fall back to the sample dataset
+        document.getElementById('loading-text').textContent = 'Loading sample dataset instead...';
+        console.log('Falling back to sample dataset...');
+        
+        try {
+          const sampleData = await this.dataLoader.loadData('/data/sample.json');
+          this.journalEntries = sampleData.entries;
+          console.log(`Successfully loaded ${this.journalEntries.length} sample entries`);
+          
+          // Show a notification that we're using sample data
+          this.showNotification('Using sample dataset - full dataset could not be loaded.');
+        } catch (sampleDataError) {
+          console.error('Error loading sample dataset:', sampleDataError);
+          throw new Error('Failed to load both main and sample datasets');
+        }
+      }
       
       // Create visualization once data is loaded
       this.createVisualization();
@@ -683,7 +711,53 @@ class WarholJournalViz {
     } catch (error) {
       console.error('Error loading data:', error);
       document.getElementById('loading-text').textContent = 'Error loading data. Please refresh and try again.';
+      
+      // Create a more detailed error message
+      const errorDetails = document.createElement('div');
+      errorDetails.style.fontSize = '14px';
+      errorDetails.style.marginTop = '10px';
+      errorDetails.style.maxWidth = '80%';
+      errorDetails.textContent = `Technical details: ${error.message}`;
+      document.getElementById('loading').appendChild(errorDetails);
+      
+      // Add a reload button
+      const reloadButton = document.createElement('button');
+      reloadButton.textContent = 'Reload Page';
+      reloadButton.style.marginTop = '20px';
+      reloadButton.style.padding = '10px 20px';
+      reloadButton.style.fontSize = '16px';
+      reloadButton.style.cursor = 'pointer';
+      reloadButton.addEventListener('click', () => window.location.reload());
+      document.getElementById('loading').appendChild(reloadButton);
     }
+  }
+  
+  /**
+   * Show a notification to the user
+   * @param {string} message - The message to display
+   */
+  showNotification(message) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.position = 'fixed';
+    notification.style.top = '20px';
+    notification.style.left = '50%';
+    notification.style.transform = 'translateX(-50%)';
+    notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    notification.style.color = 'white';
+    notification.style.padding = '10px 20px';
+    notification.style.borderRadius = '5px';
+    notification.style.zIndex = '1000';
+    notification.style.fontSize = '14px';
+    
+    document.body.appendChild(notification);
+    
+    // Remove notification after 5 seconds
+    setTimeout(() => {
+      notification.style.opacity = '0';
+      notification.style.transition = 'opacity 1s ease';
+      setTimeout(() => notification.remove(), 1000);
+    }, 5000);
   }
   
   /**
@@ -729,7 +803,7 @@ class WarholJournalViz {
         
         // Create dot with elevation pillar
         const dotGeometry = new THREE.SphereGeometry(0.2, 8, 8);
-        const emotionColor = this.getEmotionColor(this.getDominantEmotion(entry.emotions));
+        const emotionColor = this.blendEmotionColors(entry.emotions);
         
         // Adjust brightness based on height
         const heightAdjustedColor = new THREE.Color(emotionColor);
@@ -799,31 +873,32 @@ class WarholJournalViz {
   }
   
   /**
-   * Create a single orb representing a journal entry
+   * Create an orb representing a journal entry with emotion-based styling
    * @param {Object} entry - Journal entry data
    * @returns {THREE.Mesh} - The created orb mesh
    */
   createOrb(entry) {
-    // Determine radius based on emotional intensity
-    const emotionValues = Object.values(entry.emotions);
-    const emotionalIntensity = Math.max(...emotionValues);
+    // Calculate emotional intensity for sizing
+    const emotionalIntensity = this.getEmotionIntensity(entry.emotions);
     const radius = 0.1 + (emotionalIntensity * 0.1); // Base size + emotion-based scaling
     
     // Create sphere geometry with detail proportional to size
     const segments = Math.max(16, Math.floor(radius * 100));
     const geometry = new THREE.SphereGeometry(radius, segments, segments);
     
-    // Determine color based on dominant emotion
-    const dominantEmotion = this.getDominantEmotion(entry.emotions);
-    const color = this.getEmotionColor(dominantEmotion);
+    // Get color based on emotions (supports blending of multiple emotions)
+    const color = this.blendEmotionColors(entry.emotions);
     
     // Create material with emissive properties for glow effect
+    // Emissive intensity based on emotional intensity
     const material = new THREE.MeshStandardMaterial({
       color: color,
       emissive: color,
-      emissiveIntensity: 0.5,
+      emissiveIntensity: 0.3 + (emotionalIntensity * 0.7), // More intense emotions glow brighter
       roughness: 0.7,
-      metalness: 0.3
+      metalness: 0.3,
+      transparent: true, 
+      opacity: 0.7 + (emotionalIntensity * 0.3) // More intense emotions are more opaque
     });
     
     // Create the mesh and position it based on the entry's coordinates
@@ -845,11 +920,150 @@ class WarholJournalViz {
   }
   
   /**
-   * Determine the dominant emotion in an emotion object
+   * Calculate the overall emotional intensity
+   * @param {Object} emotions - Object with emotion names as keys and intensities as values
+   * @returns {number} - Emotional intensity value between 0 and 1
+   */
+  getEmotionIntensity(emotions) {
+    if (!emotions || Object.keys(emotions).length === 0) {
+      return 0;
+    }
+    return Object.values(emotions).reduce((sum, val) => sum + val, 0) / Object.keys(emotions).length;
+  }
+  
+  /**
+   * Normalize emotion name to handle case sensitivity and variations
+   * @param {string} name - The emotion name to normalize
+   * @returns {string|null} - Normalized emotion name or null if invalid
+   */
+  normalizeEmotionName(name) {
+    if (!name) {
+      return null;
+    }
+    // Convert to lowercase for matching
+    const nameLower = name.toLowerCase();
+    
+    // Check if it contains any of our known emotions
+    for (const emotion of Object.keys(this.emotionColorsRGB)) {
+      if (nameLower.includes(emotion)) {
+        return emotion;
+      }
+    }
+    return nameLower;
+  }
+  
+  /**
+   * Blend multiple emotion colors based on their intensities
+   * @param {Object} emotions - Object with emotion names as keys and intensities as values
+   * @returns {THREE.Color} - Blended color for the emotions
+   */
+  blendEmotionColors(emotions) {
+    // Create emotion color mapping (RGB values from 0-1)
+    if (!this.emotionColorsRGB) {
+      this.emotionColorsRGB = {
+        'joy': [1.0, 1.0, 0.0],         // yellow
+        'trust': [0.0, 0.8, 0.0],       // green
+        'fear': [0.6, 1.0, 0.6],        // light green
+        'surprise': [0.0, 0.8, 0.8],    // turquoise
+        'sadness': [0.0, 0.0, 1.0],     // blue
+        'disgust': [0.5, 0.0, 0.5],     // purple
+        'anger': [1.0, 0.0, 0.0],       // red
+        'anticipation': [1.0, 0.5, 0.0] // orange
+      };
+      
+      // Gray color for neutral or unrecognized emotions
+      this.grayColor = [0.7, 0.7, 0.7];
+    }
+    
+    if (!emotions || Object.keys(emotions).length === 0) {
+      return new THREE.Color(this.grayColor[0], this.grayColor[1], this.grayColor[2]);
+    }
+    
+    // Normalize emotion names to handle case sensitivity
+    const normalizedEmotions = {};
+    for (const [emotion, value] of Object.entries(emotions)) {
+      const normName = this.normalizeEmotionName(emotion);
+      if (normName && this.emotionColorsRGB[normName]) {
+        normalizedEmotions[normName] = value;
+      }
+    }
+    
+    if (Object.keys(normalizedEmotions).length === 0) {
+      return new THREE.Color(this.grayColor[0], this.grayColor[1], this.grayColor[2]);
+    }
+    
+    // Sort emotions by intensity (highest first)
+    const sortedEmotions = Object.entries(normalizedEmotions)
+      .sort((a, b) => b[1] - a[1]);
+    
+    // If there's only one emotion or the top one is very dominant (>0.7)
+    if (sortedEmotions.length === 1 || sortedEmotions[0][1] > 0.7) {
+      const dominantEmotion = sortedEmotions[0][0];
+      const color = this.emotionColorsRGB[dominantEmotion];
+      return new THREE.Color(color[0], color[1], color[2]);
+    }
+    
+    // Get top two emotions for blending
+    const topEmotion = sortedEmotions[0][0];
+    const secondEmotion = sortedEmotions.length > 1 ? sortedEmotions[1][0] : topEmotion;
+    
+    // Calculate weights (normalized to sum to 1.0)
+    const topVal = sortedEmotions[0][1];
+    const secondVal = sortedEmotions.length > 1 ? sortedEmotions[1][1] : 0;
+    
+    const total = topVal + secondVal;
+    if (total === 0) {
+      return new THREE.Color(this.grayColor[0], this.grayColor[1], this.grayColor[2]);
+    }
+    
+    const w1 = topVal / total;
+    const w2 = secondVal / total;
+    
+    // Blend the colors
+    const c1 = this.emotionColorsRGB[topEmotion];
+    const c2 = this.emotionColorsRGB[secondEmotion];
+    
+    const blended = [
+      c1[0] * w1 + c2[0] * w2,
+      c1[1] * w1 + c2[1] * w2,
+      c1[2] * w1 + c2[2] * w2
+    ];
+    
+    return new THREE.Color(blended[0], blended[1], blended[2]);
+  }
+  
+  /**
+   * Get a color for an emotion based on Plutchik's wheel (simplified version)
+   * @param {string} emotion - Emotion name
+   * @returns {THREE.Color} - Color for the emotion
+   */
+  getEmotionColor(emotion) {
+    // Create emotion color mapping (legacy method)
+    const emotionColors = {
+      joy: 0xFFFF00,         // Yellow
+      trust: 0x00CC00,       // Green
+      fear: 0x99FF99,        // Light green
+      surprise: 0x00CCCC,    // Turquoise
+      sadness: 0x0000FF,     // Blue
+      disgust: 0x800080,     // Purple
+      anger: 0xFF0000,       // Red
+      anticipation: 0xFF8000, // Orange
+      neutral: 0xB3B3B3      // Gray
+    };
+    
+    return new THREE.Color(emotionColors[emotion] || emotionColors.neutral);
+  }
+
+  /**
+   * Determine the dominant emotion in an emotion object (compatibility method)
    * @param {Object} emotions - Object with emotion names as keys and intensities as values
    * @returns {string} - The name of the dominant emotion
    */
   getDominantEmotion(emotions) {
+    if (!emotions || Object.keys(emotions).length === 0) {
+      return 'neutral';
+    }
+    
     let maxIntensity = 0;
     let dominantEmotion = 'neutral';
     
@@ -862,27 +1076,203 @@ class WarholJournalViz {
     
     return dominantEmotion;
   }
-  
+
   /**
-   * Get a color for an emotion based on Plutchik's wheel
-   * @param {string} emotion - Emotion name
-   * @returns {THREE.Color} - Color for the emotion
+   * Set up emotion color legend in the bottom left of view
    */
-  getEmotionColor(emotion) {
-    // Define colors based on Plutchik's wheel
-    const emotionColors = {
-      joy: 0xFFFF00,         // Yellow
-      trust: 0x00FF00,       // Green
-      fear: 0x00FF00,        // Green (darker shade)
-      surprise: 0x00FFFF,    // Cyan
-      sadness: 0x0000FF,     // Blue
-      disgust: 0x800080,     // Purple
-      anger: 0xFF0000,       // Red
-      anticipation: 0xFFA500, // Orange
-      neutral: 0xCCCCCC      // Gray
-    };
+  setupEmotionLegend() {
+    // Create a group for the legend that will follow the camera
+    this.legendGroup = new THREE.Group();
+    this.scene.add(this.legendGroup);
     
-    return new THREE.Color(emotionColors[emotion] || emotionColors.neutral);
+    // Define emotions in order for Plutchik's wheel
+    const emotions = [
+      { name: 'Joy', color: [1.0, 1.0, 0.0] },         // yellow (12 o'clock)
+      { name: 'Trust', color: [0.0, 0.8, 0.0] },       // green
+      { name: 'Fear', color: [0.6, 1.0, 0.6] },        // light green
+      { name: 'Surprise', color: [0.0, 0.8, 0.8] },    // turquoise
+      { name: 'Sadness', color: [0.0, 0.0, 1.0] },     // blue
+      { name: 'Disgust', color: [0.5, 0.0, 0.5] },     // purple
+      { name: 'Anger', color: [1.0, 0.0, 0.0] },       // red
+      { name: 'Anticipation', color: [1.0, 0.5, 0.0] } // orange
+    ];
+    
+    // Circular background for the entire wheel
+    const wheelRadius = 0.3;
+    const circleGeometry = new THREE.CircleGeometry(wheelRadius, 32);
+    const circleMaterial = new THREE.MeshBasicMaterial({
+      color: 0x111111,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide
+    });
+    
+    const circleBackground = new THREE.Mesh(circleGeometry, circleMaterial);
+    circleBackground.position.set(0, 0, 0);
+    this.legendGroup.add(circleBackground);
+    
+    // Title for the legend
+    const titleCanvas = document.createElement('canvas');
+    const titleContext = titleCanvas.getContext('2d');
+    titleCanvas.width = 256;
+    titleCanvas.height = 32;
+    titleContext.fillStyle = '#ffffff';
+    titleContext.font = 'bold 20px Arial';
+    titleContext.textAlign = 'center';
+    titleContext.textBaseline = 'middle';
+    titleContext.fillText('EMOTION WHEEL', 128, 16);
+    
+    const titleTexture = new THREE.CanvasTexture(titleCanvas);
+    const titleMaterial = new THREE.MeshBasicMaterial({
+      map: titleTexture,
+      transparent: true
+    });
+    
+    const titleGeometry = new THREE.PlaneGeometry(0.4, 0.04);
+    const titleMesh = new THREE.Mesh(titleGeometry, titleMaterial);
+    titleMesh.position.set(0, wheelRadius + 0.05, 0.001);
+    this.legendGroup.add(titleMesh);
+    
+    // Create wedges for each emotion
+    const segments = emotions.length;
+    const angleStep = (Math.PI * 2) / segments;
+    const innerRadius = wheelRadius * 0.4; // Center hole
+    
+    for (let i = 0; i < segments; i++) {
+      const emotion = emotions[i];
+      // Start at 12 o'clock (-Math.PI/2) and go clockwise
+      const startAngle = -Math.PI/2 + i * angleStep;
+      const endAngle = -Math.PI/2 + (i + 1) * angleStep;
+      
+      // Create a custom shape for the wedge
+      const shape = new THREE.Shape();
+      shape.moveTo(0, 0); // Center of the wheel
+      
+      // Draw the inner arc (small radius)
+      shape.absarc(0, 0, innerRadius, startAngle, endAngle, false);
+      
+      // Draw the outer arc (full radius)
+      shape.absarc(0, 0, wheelRadius, endAngle, startAngle, true);
+      
+      // Close the shape
+      shape.closePath();
+      
+      // Create the wedge geometry from the shape
+      const wedgeGeometry = new THREE.ShapeGeometry(shape);
+      const wedgeMaterial = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(emotion.color[0], emotion.color[1], emotion.color[2]),
+        emissive: new THREE.Color(emotion.color[0], emotion.color[1], emotion.color[2]),
+        emissiveIntensity: 0.5,
+        side: THREE.DoubleSide
+      });
+      
+      const wedge = new THREE.Mesh(wedgeGeometry, wedgeMaterial);
+      wedge.position.set(0, 0, 0.002); // Slightly in front of the background
+      this.legendGroup.add(wedge);
+      
+      // Add emotion labels
+      const middleAngle = (startAngle + endAngle) / 2;
+      const labelDistance = wheelRadius * 0.7; // Position labels between inner and outer radius
+      
+      // Calculate position using sine and cosine
+      const labelX = Math.cos(middleAngle) * labelDistance;
+      const labelY = Math.sin(middleAngle) * labelDistance;
+      
+      const labelCanvas = document.createElement('canvas');
+      const labelContext = labelCanvas.getContext('2d');
+      labelCanvas.width = 512;
+      labelCanvas.height = 128; // Increased height for larger text
+      // Use white text color with black outline for better visibility
+      labelContext.fillStyle = '#ffffff';
+      labelContext.font = 'bold 72px Arial'; // 3x larger font size
+      labelContext.textAlign = 'center';
+      labelContext.textBaseline = 'middle';
+      
+      // Add thick black outline to make text more readable
+      labelContext.strokeStyle = '#000000';
+      labelContext.lineWidth = 12;
+      labelContext.strokeText(emotion.name, 256, 64);
+      labelContext.fillText(emotion.name, 256, 64);
+      
+      const labelTexture = new THREE.CanvasTexture(labelCanvas);
+      const labelGeometry = new THREE.PlaneGeometry(0.25, 0.08); // Increased size
+      const labelMaterial = new THREE.MeshBasicMaterial({
+        map: labelTexture,
+        transparent: true,
+        side: THREE.DoubleSide
+      });
+      
+      const label = new THREE.Mesh(labelGeometry, labelMaterial);
+      label.position.set(labelX, labelY, 0.003); // Slightly in front of wedges
+      
+      // Fix the text orientation so it's always readable from camera's perspective
+      // All labels should be right-side up
+      
+      // Calculate the correct rotation so text is always upright relative to viewer
+      // For a circle, we want text on the left side to be rotated 90 degrees,
+      // text on the right to be rotated -90 degrees, top 0, bottom 180
+      
+      // First reset rotation
+      label.rotation.z = 0;
+      
+      // Then calculate angle to keep text upright
+      // This ensures all text is oriented toward the outside of the wheel
+      // and in the correct reading orientation
+      if (labelX < 0) {
+        // Left half - rotate 90° counter-clockwise
+        label.rotation.z = Math.PI/2;
+      } else if (labelX > 0) {
+        // Right half - rotate 90° clockwise
+        label.rotation.z = -Math.PI/2;
+      } else if (labelY < 0) {
+        // Bottom - rotate 180°
+        label.rotation.z = Math.PI;
+      }
+      // Top (labelY > 0 && labelX == 0) remains at 0 rotation
+      
+      this.legendGroup.add(label);
+    }
+    
+    // Position the legend initially
+    this.updateLegendPosition();
+  }
+
+  /**
+   * Update the legend position to stay in the bottom left of the view
+   */
+  updateLegendPosition() {
+    if (!this.legendGroup) return;
+    
+    // Calculate position in front of and to the left of the camera
+    const distance = 1.0;  // Distance in front of camera
+    const leftOffset = 0.4; // Offset to the left
+    const downOffset = 0.3; // Offset downward
+    
+    // Get camera position and direction
+    const cameraPosition = new THREE.Vector3();
+    const cameraDirection = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPosition);
+    this.camera.getWorldDirection(cameraDirection);
+    
+    // Calculate right vector (perpendicular to camera direction)
+    const rightVector = new THREE.Vector3(1, 0, 0);
+    rightVector.applyQuaternion(this.camera.quaternion);
+    
+    // Calculate up vector
+    const upVector = new THREE.Vector3(0, 1, 0);
+    
+    // Calculate position for the legend
+    const position = new THREE.Vector3();
+    position.copy(cameraPosition);
+    position.addScaledVector(cameraDirection, distance);
+    position.addScaledVector(rightVector, -leftOffset);
+    position.addScaledVector(upVector, -downOffset);
+    
+    // Update legend position
+    this.legendGroup.position.copy(position);
+    
+    // Make the legend face the camera
+    this.legendGroup.lookAt(cameraPosition);
   }
 }
 
