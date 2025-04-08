@@ -200,12 +200,18 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Add VR button for immersive experience
 - Set up controller models and interactions
 - Implement continuous movement controls
+- Implement desktop controls for non-VR testing
 
 **Key Points:**
 - Import WebXR components from Three.js examples
 - Set up controller event listeners
 - Add ray visualization for interaction guidance
 - Configure continuous movement with appropriate speed and controls
+- **Desktop Controls:**
+  - WASD/Arrow keys for movement in viewing direction
+  - Mouse drag for camera rotation (click and drag)
+  - Space key to move up, Shift key to move down
+  - Desktop controls active only when not in VR mode
 
 #### Phase 2.4: Data Loading and Basic Visualization
 **Tasks:**
