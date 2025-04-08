@@ -23,8 +23,10 @@ export default class EntryPanel {
     this.currentEntry = null;
     this.scrollOffset = 0;
     this.maxScrollOffset = 0;
-    this.scrollSpeed = 0.05;
+    this.scrollSpeed = 0.1; // Increased default scroll speed
+    this.baseScrollSpeed = 0.1; // Base speed for adaptive scrolling
     this.textContainer = null;
+    this.contentBottomY = 0;
     
     // Create panel elements
     this.createPanel();
@@ -236,6 +238,13 @@ export default class EntryPanel {
    * @param {string} direction - 'up' or 'down'
    */
   scroll(direction) {
+    // Adjust scroll speed based on content length
+    // Longer content should scroll faster
+    this.scrollSpeed = this.baseScrollSpeed * (1 + (this.maxScrollOffset / 3));
+    
+    // Clamp scroll speed to reasonable values
+    this.scrollSpeed = Math.max(0.1, Math.min(0.3, this.scrollSpeed));
+    
     if (direction === 'up') {
       this.scrollOffset = Math.max(0, this.scrollOffset - this.scrollSpeed);
     } else if (direction === 'down') {
@@ -311,19 +320,22 @@ export default class EntryPanel {
     });
 
     // Location if available
+    let yPosition = 0.45;
     if (entry.location) {
       this.addText({
         text: entry.location,
-        position: [0, 0.45, 0.01],
+        position: [0, yPosition, 0.01],
         fontSize: 0.05,
         color: 0xcccccc
       });
+      
+      yPosition -= 0.12; // Move down for the next section
     }
     
     // Journal entry text (full text for scrolling)
-    this.addText({
+    const entryTextElement = this.addText({
       text: entry.text,
-      position: [0, 0.15, 0.01],
+      position: [0, yPosition - (entry.text.length > 500 ? 0.2 : 0), 0.01], // Adjust position based on text length
       fontSize: 0.04,
       color: 0xffffff,
       maxWidth: 1.3,
@@ -331,49 +343,203 @@ export default class EntryPanel {
       textAlign: 'justify'
     });
     
+    // Calculate estimated height of the entry text
+    const maxWidth = 1.3; // Same as maxWidth setting above
+    const fontSize = 0.04; // Same as fontSize setting above
+    const lineHeight = 1.3; // Same as lineHeight setting above
+    const charsPerLine = Math.floor(maxWidth / (fontSize * 0.5)); // Rough estimate of characters per line
+    const lines = Math.ceil(entry.text.length / charsPerLine);
+    const textHeight = lines * fontSize * lineHeight;
+    
+    // Starting vertical position for topics section - positioned just below entry text
+    // Text anchor is center, so we need to adjust by half the height
+    const entryYPos = yPosition - (entry.text.length > 500 ? 0.2 : 0);
+    const startYPos = entryYPos - (textHeight / 2);
+    
+    // Sections positioning - dynamically positioned below the entry text
+    let currentYPos = startYPos - 0.15; // Add extra spacing between entry and sections
+    
+    // Emotions section - positioned first after entry text
+    if (entry.emotions && Object.keys(entry.emotions).length > 0) {
+      // Get emotions and sort by intensity (highest first)
+      const emotions = Object.entries(entry.emotions)
+        .sort((a, b) => b[1] - a[1]) // Sort by intensity descending
+        .filter(([_, value]) => value > 0); // Only show emotions with intensity > 0
+      
+      if (emotions.length > 0) {
+        // Only show dominant emotion if it's very strong (>0.7) or the only one
+        // Otherwise show top two emotions (similar to orb color blending logic)
+        let displayEmotions = [];
+        
+        if (emotions.length === 1 || emotions[0][1] > 0.7) {
+          // Show only the dominant emotion
+          displayEmotions = [emotions[0]];
+        } else if (emotions.length > 1) {
+          // Show top two emotions
+          displayEmotions = [emotions[0], emotions[1]];
+        }
+        
+        if (displayEmotions.length > 0) {
+          const emotionsTitle = this.addText({
+            text: 'Dominant Emotions:',
+            position: [-0.65, currentYPos, 0.01],
+            fontSize: 0.045,
+            color: 0xffcc77,
+            anchorX: 'left'
+          });
+          
+          currentYPos -= 0.07; // Move down for emotions content
+          
+          const emotionLabels = displayEmotions
+            .map(([emotion, intensity]) => {
+              const formattedEmotion = emotion.charAt(0).toUpperCase() + emotion.slice(1);
+              return `${formattedEmotion}: ${intensity.toFixed(1)}`;
+            })
+            .join(', ');
+          
+          const emotionsContent = this.addText({
+            text: emotionLabels,
+            position: [-0.65, currentYPos, 0.01],
+            fontSize: 0.04,
+            color: 0xffcc77,
+            anchorX: 'left',
+            maxWidth: 1.3
+          });
+          
+          // Estimate the height of the emotions text
+          const emotionsLines = Math.ceil(emotionLabels.length / charsPerLine);
+          const emotionsHeight = emotionsLines * 0.04 * 1.3;
+          
+          // Update the Y position for the next section
+          currentYPos -= emotionsHeight + 0.1; // Add some spacing after emotions
+        }
+      }
+    }
+    
     // Topics section
     if (entry.topics && entry.topics.length > 0) {
-      const yPosition = -0.6 - (entry.text.length * 0.0001); // Position below the text
-      
-      this.addText({
+      const topicsTitle = this.addText({
         text: 'Topics:',
-        position: [-0.65, yPosition, 0.01],
+        position: [-0.65, currentYPos, 0.01],
         fontSize: 0.045,
         color: 0xaaccff,
         anchorX: 'left'
       });
       
-      this.addText({
+      currentYPos -= 0.07; // Move down for topics content
+      
+      const topicsContent = this.addText({
         text: entry.topics.join(', '),
-        position: [-0.65, yPosition - 0.07, 0.01],
+        position: [-0.65, currentYPos, 0.01],
         fontSize: 0.04,
         color: 0xcccccc,
         anchorX: 'left',
         maxWidth: 1.3
       });
+      
+      // Estimate the height of the topics text
+      const topicsText = entry.topics.join(', ');
+      const topicsLines = Math.ceil(topicsText.length / charsPerLine);
+      const topicsHeight = topicsLines * 0.04 * 1.3;
+      
+      // Update the Y position for the next section
+      currentYPos -= topicsHeight + 0.1; // Add some spacing after topics
     }
     
-    // People section
+    // People section - positioned below the topics section
     if (entry.entities && entry.entities.people && entry.entities.people.length > 0) {
-      const yPosition = -0.8 - (entry.text.length * 0.0001); // Position below topics
-      
-      this.addText({
+      const peopleTitle = this.addText({
         text: 'People:',
-        position: [-0.65, yPosition, 0.01],
+        position: [-0.65, currentYPos, 0.01],
         fontSize: 0.045,
         color: 0xffaa88,
         anchorX: 'left'
       });
       
-      this.addText({
+      currentYPos -= 0.07; // Move down for people content
+      
+      const peopleContent = this.addText({
         text: entry.entities.people.join(', '),
-        position: [-0.65, yPosition - 0.07, 0.01],
+        position: [-0.65, currentYPos, 0.01],
         fontSize: 0.04,
         color: 0xcccccc,
         anchorX: 'left',
         maxWidth: 1.3
       });
+      
+      // Estimate the height of the people text
+      const peopleText = entry.entities.people.join(', ');
+      const peopleLines = Math.ceil(peopleText.length / charsPerLine);
+      const peopleHeight = peopleLines * 0.04 * 1.3;
+      
+      // Update the Y position for the next section
+      currentYPos -= peopleHeight + 0.1; // Add some spacing after people
     }
+    
+    // Places section - positioned below the people section
+    if (entry.entities && entry.entities.places && entry.entities.places.length > 0) {
+      const placesTitle = this.addText({
+        text: 'Places:',
+        position: [-0.65, currentYPos, 0.01],
+        fontSize: 0.045,
+        color: 0x88ccaa,
+        anchorX: 'left'
+      });
+      
+      currentYPos -= 0.07; // Move down for places content
+      
+      const placesContent = this.addText({
+        text: entry.entities.places.join(', '),
+        position: [-0.65, currentYPos, 0.01],
+        fontSize: 0.04,
+        color: 0xcccccc,
+        anchorX: 'left',
+        maxWidth: 1.3
+      });
+      
+      // Estimate the height of the places text
+      const placesText = entry.entities.places.join(', ');
+      const placesLines = Math.ceil(placesText.length / charsPerLine);
+      const placesHeight = placesLines * 0.04 * 1.3;
+      
+      // Update the Y position for the next section
+      currentYPos -= placesHeight + 0.1; // Add some spacing after places
+    }
+    
+    // Related entries section
+    if (entry.relatedEntries && entry.relatedEntries.length > 0) {
+      const relatedTitle = this.addText({
+        text: 'Related Entries:',
+        position: [-0.65, currentYPos, 0.01],
+        fontSize: 0.045,
+        color: 0xccaaff,
+        anchorX: 'left'
+      });
+      
+      currentYPos -= 0.07; // Move down for related entries content
+      
+      // Format the related entries as IDs/dates if available
+      const relatedText = entry.relatedEntries.join(', ');
+      
+      const relatedContent = this.addText({
+        text: relatedText,
+        position: [-0.65, currentYPos, 0.01],
+        fontSize: 0.04,
+        color: 0xcccccc,
+        anchorX: 'left',
+        maxWidth: 1.3
+      });
+      
+      // Estimate the height of the related entries text
+      const relatedLines = Math.ceil(relatedText.length / charsPerLine);
+      const relatedHeight = relatedLines * 0.04 * 1.3;
+      
+      // Update the Y position for the next section
+      currentYPos -= relatedHeight + 0.1; // Add some spacing
+    }
+    
+    // Track the bottom position for scroll calculation
+    this.contentBottomY = currentYPos - 0.15; // Add some padding at the bottom
     
     // Calculate the total height of the content to determine if scrolling is needed
     this.calculateContentHeight();
@@ -386,21 +552,22 @@ export default class EntryPanel {
    * Calculate the total height of content to determine scroll limits
    */
   calculateContentHeight() {
-    // Simple calculation based on text length
+    // Use the known bottom position of content to calculate total height
     if (this.currentEntry) {
-      const textLength = this.currentEntry.text.length;
-      const estimatedLines = textLength / 30; // Rough estimate: 30 chars per line
-      const lineHeight = 0.05;
-      const contentHeight = estimatedLines * lineHeight;
+      // Top of visible area
+      const visibleTop = 0.6; // Near the header
       
-      // Add extra space for topics and people sections
-      const extraSections = 0.5;
+      // Bottom of content (negative value as it's below the center)
+      const contentBottom = this.contentBottomY || -0.6;
+      
+      // Total content height
+      const contentHeight = visibleTop - contentBottom;
       
       // Panel visible height: ~1.2 (accounting for header space)
       const visibleHeight = 1.2;
       
       // Max scroll offset (0 if content fits within panel)
-      this.maxScrollOffset = Math.max(0, contentHeight + extraSections - visibleHeight);
+      this.maxScrollOffset = Math.max(0, contentHeight - visibleHeight);
       
       // Update scroll indicator visibility
       if (this.scrollIndicator && this.scrollUpButton && this.scrollDownButton) {
