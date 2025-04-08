@@ -43,6 +43,10 @@ class WarholJournalViz {
     this.journalEntries = [];
     this.orbObjects = new Map(); // Map entry IDs to Three.js objects
     
+    // Related entries variables
+    this.relatedEntryObjects = []; // Store related objects for highlighting
+    this.relationLines = []; // Store line objects connecting related entries
+    
     // Minimap variables
     this.minimapCamera = null;
     this.minimapScene = null;
@@ -1604,7 +1608,7 @@ class WarholJournalViz {
     
     // If there was a previously selected object, reset its material
     if (this.selectedObject) {
-      this.resetObjectMaterial(this.selectedObject);
+      this.deselectObject();
     }
     
     // Select new object
@@ -1620,6 +1624,9 @@ class WarholJournalViz {
     
     // Handle entry-specific interactions
     if (selectedObj.userData.type === 'journal-entry') {
+      // Highlight related entries and create connections
+      this.highlightRelatedEntries(selectedObj);
+      
       // Display the entry panel
       if (this.entryPanel) {
         this.entryPanel.showEntry(selectedObj.userData.entry);
@@ -1645,6 +1652,9 @@ class WarholJournalViz {
     if (this.selectedObject) {
       this.resetObjectMaterial(this.selectedObject);
       this.selectedObject = null;
+      
+      // Clean up related entry highlighting and connections
+      this.cleanupRelatedEntries();
       
       // Hide the entry panel
       if (this.entryPanel) {
@@ -1805,6 +1815,106 @@ class WarholJournalViz {
     this._lastInteractiveUpdate = performance.now();
     
     return interactiveObjects;
+  }
+
+  /**
+   * Highlight related entries when a journal entry is selected
+   * @param {Object} selectedObj - The selected Three.js object
+   */
+  highlightRelatedEntries(selectedObj) {
+    // Clean up any existing related entry effects
+    this.cleanupRelatedEntries();
+    
+    // Only proceed if the object is a journal entry
+    if (!selectedObj || !selectedObj.userData || selectedObj.userData.type !== 'journal-entry') {
+      return;
+    }
+    
+    const entry = selectedObj.userData.entry;
+    
+    // Skip if the entry doesn't have related entries or is missing required data
+    if (!entry || !entry.relatedEntries || !Array.isArray(entry.relatedEntries) || entry.relatedEntries.length === 0) {
+      console.warn('No related entries found for selected entry:', entry?.id);
+      return;
+    }
+    
+    console.log(`Processing ${entry.relatedEntries.length} related entries for entry ${entry.id}`);
+    
+    // Get related orb objects using the orbObjects map
+    entry.relatedEntries.forEach(relatedId => {
+      const relatedOrb = this.orbObjects.get(relatedId);
+      
+      if (relatedOrb) {
+        // Store original material
+        if (!this.originalMaterials.has(relatedOrb.uuid)) {
+          this.originalMaterials.set(relatedOrb.uuid, relatedOrb.material.clone());
+        }
+        
+        // Apply a subtle highlight effect
+        const relatedMaterial = relatedOrb.material.clone();
+        relatedMaterial.emissiveIntensity *= 1.3;
+        relatedMaterial.emissive.lerp(new THREE.Color(0x00ffff), 0.3); // Cyan tint for related entries
+        relatedOrb.material = relatedMaterial;
+        
+        // Add to the related objects array for cleanup later
+        this.relatedEntryObjects.push(relatedOrb);
+        
+        // Create a line connecting the selected orb to the related orb
+        this.createConnectionLine(selectedObj, relatedOrb);
+      } else {
+        console.warn(`Related entry ${relatedId} not found in orbObjects map`);
+      }
+    });
+  }
+  
+  /**
+   * Create a line connecting the selected entry to a related entry
+   * @param {Object} sourceObj - The source (selected) Three.js object
+   * @param {Object} targetObj - The target (related) Three.js object
+   */
+  createConnectionLine(sourceObj, targetObj) {
+    const material = new THREE.LineBasicMaterial({
+      color: 0x00ffff, // Cyan color for connections
+      transparent: true,
+      opacity: 0.6,
+      linewidth: 1
+    });
+    
+    // Create geometry for the line
+    const points = [
+      sourceObj.position.clone(),
+      targetObj.position.clone()
+    ];
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    
+    // Create the line
+    const line = new THREE.Line(geometry, material);
+    line.userData.isConnectionLine = true;
+    
+    // Add line to the scene and store for later cleanup
+    this.scene.add(line);
+    this.relationLines.push(line);
+  }
+  
+  /**
+   * Clean up any highlighted related entries and connection lines
+   */
+  cleanupRelatedEntries() {
+    // Reset materials on related orbs
+    this.relatedEntryObjects.forEach(orb => {
+      this.resetObjectMaterial(orb);
+    });
+    this.relatedEntryObjects = [];
+    
+    // Remove connection lines
+    this.relationLines.forEach(line => {
+      if (line && line.parent) {
+        line.parent.remove(line);
+        if (line.geometry) line.geometry.dispose();
+        if (line.material) line.material.dispose();
+      }
+    });
+    this.relationLines = [];
   }
 }
 
