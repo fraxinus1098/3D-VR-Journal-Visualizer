@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 import DataLoader from './utils/data-loader.js';
+import EntryPanel from './components/EntryPanel.js'; // Import the EntryPanel component
 
 // Main class for the WebXR application
 class WarholJournalViz {
@@ -47,6 +48,9 @@ class WarholJournalViz {
     this.minimapScene = null;
     this.minimapRenderer = null;
     this.playerMarker = null;
+    
+    // Entry panel for displaying journal details
+    this.entryPanel = null;
     
     this.init();
   }
@@ -99,6 +103,12 @@ class WarholJournalViz {
     
     // Set up emotion color legend
     this.setupEmotionLegend();
+    
+    // Create entry panel for displaying journal entries
+    this.entryPanel = new EntryPanel({
+      camera: this.camera,
+      scene: this.scene
+    });
     
     // Load data and create visualization
     this.loadData();
@@ -367,53 +377,84 @@ class WarholJournalViz {
   }
   
   handleRayIntersection(controller) {
-    // Set raycaster from controller position and orientation
+    // Get the controller's position and orientation in world space
+    controller.updateMatrixWorld();
     this.tempMatrix.identity().extractRotation(controller.matrixWorld);
+    
+    // Set raycaster origin and direction based on controller
     this.raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld);
     this.raycaster.ray.direction.set(0, 0, -1).applyMatrix4(this.tempMatrix);
     
-    // Get only interactive objects for better performance
+    // Get all interactive objects in the scene
     const interactiveObjects = this.getInteractiveObjects();
     
-    // Perform raycasting on interactive objects only
+    // Perform raycasting
     const intersects = this.raycaster.intersectObjects(interactiveObjects, false);
     
-    // Find first interactive object
-    const interactive = intersects.length > 0 ? intersects[0] : null;
-    
-    // Handle hover effects
-    if (interactive) {
-      const hoveredObj = interactive.object;
+    // If controller ray is intersecting with something
+    if (intersects.length > 0) {
+      const intersection = intersects[0];
+      const object = intersection.object;
       
-      // If a new object is hovered, update hover state
-      if (this.hoveredObject !== hoveredObj) {
-        // Reset previous hovered object
+      // Update controller visual feedback
+      controller.userData.line.scale.z = intersection.distance;
+      
+      // Check if the intersected object is part of the entry panel
+      if (this.entryPanel) {
+        const interaction = this.entryPanel.checkInteraction(intersection);
+        if (interaction) {
+          // Store the interaction type for use in select events
+          controller.userData.panelInteraction = interaction;
+          
+          // Use different colors for different interactions
+          if (interaction === 'close') {
+            controller.userData.lineColor = 0xff0000; // Red for close
+          } else if (interaction === 'scroll-up' || interaction === 'scroll-down') {
+            controller.userData.lineColor = 0x00ffff; // Cyan for scroll
+          }
+          
+          controller.userData.line.material.color.set(controller.userData.lineColor);
+          return;
+        } else {
+          controller.userData.panelInteraction = null;
+        }
+      }
+      
+      // Regular object interaction
+      if (object !== this.hoveredObject) {
+        // Reset previous hover effect
         if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
           this.resetObjectMaterial(this.hoveredObject);
         }
         
-        // Apply hover effect to new object if it's not selected
-        if (hoveredObj !== this.selectedObject) {
-          this.applyHoverEffect(hoveredObj);
+        // Apply hover effect to new object if it's not already selected
+        if (object !== this.selectedObject) {
+          this.applyHoverEffect(object);
         }
         
-        this.hoveredObject = hoveredObj;
+        this.hoveredObject = object;
       }
       
-      // Update controller appearance
-      controller.children[0].scale.z = interactive.distance;
+      // Change ray color to indicate interactive object
+      controller.userData.lineColor = 0x00ff00; // Green for interactive objects
+      controller.userData.line.material.color.set(controller.userData.lineColor);
     } else {
-      // Reset hover state if no intersection
+      // Reset hover effect if no intersection and not the selected object
       if (this.hoveredObject && this.hoveredObject !== this.selectedObject) {
         this.resetObjectMaterial(this.hoveredObject);
         this.hoveredObject = null;
       }
       
-      // Reset controller appearance
-      controller.children[0].scale.z = 5;
+      // Reset controller ray color to default
+      controller.userData.lineColor = 0xffffff; // White for no intersection
+      controller.userData.line.material.color.set(controller.userData.lineColor);
+      
+      // Reset panel interaction state
+      controller.userData.panelInteraction = null;
+      
+      // Set ray to default length
+      controller.userData.line.scale.z = 5;
     }
-    
-    return interactive;
   }
   
   processControllerInput() {
@@ -526,6 +567,11 @@ class WarholJournalViz {
     
     // Update emotion legend position
     this.updateLegendPosition();
+    
+    // Update entry panel position
+    if (this.entryPanel) {
+      this.entryPanel.updatePosition();
+    }
     
     // Periodic memory cleanup
     this.cleanupMemory();
@@ -1223,6 +1269,8 @@ class WarholJournalViz {
   setupEmotionLegend() {
     // Create a group for the legend that will follow the camera
     this.legendGroup = new THREE.Group();
+    // Set a lower renderOrder for the entire legend group to appear behind the entry panel
+    this.legendGroup.renderOrder = 5;
     this.scene.add(this.legendGroup);
     
     // Define emotions in order for Plutchik's wheel
@@ -1244,11 +1292,13 @@ class WarholJournalViz {
       color: 0x111111,
       transparent: true,
       opacity: 0.7,
-      side: THREE.DoubleSide
+      side: THREE.DoubleSide,
+      depthTest: false
     });
     
     const circleBackground = new THREE.Mesh(circleGeometry, circleMaterial);
     circleBackground.position.set(0, 0, 0);
+    circleBackground.renderOrder = 5;
     this.legendGroup.add(circleBackground);
     
     // Title for the legend
@@ -1265,12 +1315,14 @@ class WarholJournalViz {
     const titleTexture = new THREE.CanvasTexture(titleCanvas);
     const titleMaterial = new THREE.MeshBasicMaterial({
       map: titleTexture,
-      transparent: true
+      transparent: true,
+      depthTest: false
     });
     
     const titleGeometry = new THREE.PlaneGeometry(0.4, 0.04);
     const titleMesh = new THREE.Mesh(titleGeometry, titleMaterial);
     titleMesh.position.set(0, wheelRadius + 0.05, 0.001);
+    titleMesh.renderOrder = 5;
     this.legendGroup.add(titleMesh);
     
     // Create wedges for each emotion
@@ -1303,11 +1355,13 @@ class WarholJournalViz {
         color: new THREE.Color(emotion.color[0], emotion.color[1], emotion.color[2]),
         emissive: new THREE.Color(emotion.color[0], emotion.color[1], emotion.color[2]),
         emissiveIntensity: 0.5,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        depthTest: false
       });
       
       const wedge = new THREE.Mesh(wedgeGeometry, wedgeMaterial);
       wedge.position.set(0, 0, 0.002); // Slightly in front of the background
+      wedge.renderOrder = 5;
       this.legendGroup.add(wedge);
       
       // Add emotion labels
@@ -1339,11 +1393,13 @@ class WarholJournalViz {
       const labelMaterial = new THREE.MeshBasicMaterial({
         map: labelTexture,
         transparent: true,
-        side: THREE.DoubleSide
+        side: THREE.DoubleSide,
+        depthTest: false
       });
       
       const label = new THREE.Mesh(labelGeometry, labelMaterial);
       label.position.set(labelX, labelY, 0.003); // Slightly in front of wedges
+      label.renderOrder = 5;
       
       // Fix the text orientation so it's always readable from camera's perspective
       // All labels should be right-side up
@@ -1433,6 +1489,23 @@ class WarholJournalViz {
     // Find first interactive object
     const interactive = intersects.length > 0 ? intersects[0] : null;
     
+    // Check for panel interactions first
+    if (this._panelDesktopInteraction && this.entryPanel) {
+      const interaction = this._panelDesktopInteraction;
+      
+      if (interaction === 'close') {
+        this.entryPanel.hide();
+        return;
+      } else if (interaction === 'scroll-up') {
+        this.entryPanel.scroll('up');
+        return;
+      } else if (interaction === 'scroll-down') {
+        this.entryPanel.scroll('down');
+        return;
+      }
+    }
+    
+    // Handle regular object selection
     if (interactive) {
       const selectedObj = interactive.object;
       this.handleSelection(selectedObj);
@@ -1468,6 +1541,25 @@ class WarholJournalViz {
     if (interactive) {
       const hoveredObj = interactive.object;
       
+      // Check if this is a panel interaction first
+      if (this.entryPanel) {
+        const interaction = this.entryPanel.checkInteraction(interactive);
+        if (interaction) {
+          // Update cursor based on interaction type
+          if (interaction === 'close') {
+            this.renderer.domElement.style.cursor = 'pointer';
+          } else if (interaction === 'scroll-up' || interaction === 'scroll-down') {
+            this.renderer.domElement.style.cursor = 'pointer';
+          }
+          
+          // Store interaction type for click handling
+          this._panelDesktopInteraction = interaction;
+          return;
+        } else {
+          this._panelDesktopInteraction = null;
+        }
+      }
+      
       // If a new object is hovered, update hover state
       if (this.hoveredObject !== hoveredObj) {
         // Reset previous hovered object
@@ -1491,6 +1583,9 @@ class WarholJournalViz {
         this.resetObjectMaterial(this.hoveredObject);
         this.hoveredObject = null;
       }
+      
+      // Reset interaction type
+      this._panelDesktopInteraction = null;
       
       // Reset cursor
       this.renderer.domElement.style.cursor = 'grab';
@@ -1525,14 +1620,17 @@ class WarholJournalViz {
     
     // Handle entry-specific interactions
     if (selectedObj.userData.type === 'journal-entry') {
-      // Here we'll eventually display the entry panel (Phase 3.3)
+      // Display the entry panel
+      if (this.entryPanel) {
+        this.entryPanel.showEntry(selectedObj.userData.entry);
+      }
+      
+      // Log selection for debugging
       console.log('Selected journal entry:', selectedObj.userData.entry.id);
       
-      // Instead of logging the entire entry which could be large, just log the ID
-      // This prevents large object logging which can freeze the browser
-      
-      // This is just a placeholder for now - we'll implement the panel in Phase 3.3
-      const date = selectedObj.userData.entry.date ? new Date(selectedObj.userData.entry.date).toLocaleDateString() : 'Unknown date';
+      // Show brief notification
+      const date = selectedObj.userData.entry.date ? 
+                  new Date(selectedObj.userData.entry.date).toLocaleDateString() : 'Unknown date';
       this.showNotification(`Selected: ${date}`);
     } else if (selectedObj.userData.type === 'test-cube') {
       console.log('Selected test cube');
@@ -1547,6 +1645,11 @@ class WarholJournalViz {
     if (this.selectedObject) {
       this.resetObjectMaterial(this.selectedObject);
       this.selectedObject = null;
+      
+      // Hide the entry panel
+      if (this.entryPanel) {
+        this.entryPanel.hide();
+      }
     }
   }
   
@@ -1682,6 +1785,19 @@ class WarholJournalViz {
           interactiveObjects.push(object);
         }
       });
+    }
+    
+    // Add panel interactive elements
+    if (this.entryPanel) {
+      if (this.entryPanel.closeButton) {
+        interactiveObjects.push(this.entryPanel.closeButton);
+      }
+      if (this.entryPanel.scrollUpButton) {
+        interactiveObjects.push(this.entryPanel.scrollUpButton);
+      }
+      if (this.entryPanel.scrollDownButton) {
+        interactiveObjects.push(this.entryPanel.scrollDownButton);
+      }
     }
     
     // Cache the results
