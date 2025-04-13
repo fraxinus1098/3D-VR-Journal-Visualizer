@@ -514,10 +514,7 @@ export default class OrbVisualizer {
         }
       });
     } catch (error) {
-      console.error('Error highlighting related entries:', error);
-      
-      // Clean up in case of error
-      this.cleanupRelatedEntries();
+      console.error(`Error highlighting related entries:`, error);
     }
   }
   

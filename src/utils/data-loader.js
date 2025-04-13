@@ -58,19 +58,7 @@ export default class DataLoader {
         return this.data;
       } catch (parseError) {
         console.error('JSON parsing error:', parseError);
-        
-        // Try loading a smaller sample file as fallback
-        console.log('Attempting to load sample data instead...');
-        const sampleUrl = url.replace('warhol_final.json', 'sample.json');
-        const sampleResponse = await fetch(sampleUrl);
-        if (sampleResponse.ok) {
-          const sampleData = await sampleResponse.json();
-          this.data = sampleData;
-          console.log(`Loaded ${sampleData.entries?.length || 0} sample entries as fallback`);
-          return this.data;
-        } else {
-          throw new Error('Could not load main data or sample data');
-        }
+        throw parseError;
       }
     } catch (error) {
       console.error('Error loading journal data:', error);

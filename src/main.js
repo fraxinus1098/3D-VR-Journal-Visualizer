@@ -601,29 +601,71 @@ class WarholJournalViz {
       document.getElementById('loading').style.display = 'block';
       document.getElementById('loading-text').textContent = 'Loading journal data...';
       
-      // First try to load the full dataset
+      // First try to load the optimized dataset
       try {
-        console.log('Attempting to load the complete dataset...');
-        const data = await this.dataLoader.loadData('/data/warhol_final.json');
+        console.log('Attempting to load the optimized dataset...');
+        const data = await this.dataLoader.loadData('/data/warhol_final_optimized.json');
+        
+        // Validate data for missing relatedEntries
+        if (data.entries) {
+          let fixedCount = 0;
+          data.entries.forEach(entry => {
+            if (!entry.relatedEntries || !Array.isArray(entry.relatedEntries)) {
+              entry.relatedEntries = [];
+              fixedCount++;
+            }
+          });
+          if (fixedCount > 0) {
+            console.log(`Fixed ${fixedCount} entries with missing relatedEntries arrays`);
+          }
+        }
+        
         this.journalEntries = data.entries;
-        console.log(`Successfully loaded ${this.journalEntries.length} entries`);
-      } catch (mainDataError) {
-        console.error('Error loading complete dataset:', mainDataError);
+        console.log(`Successfully loaded ${this.journalEntries.length} entries from optimized dataset`);
+      } catch (optimizedError) {
+        console.error('Error loading optimized dataset:', optimizedError);
         
-        // Fall back to the sample dataset
-        document.getElementById('loading-text').textContent = 'Loading sample dataset instead...';
-        console.log('Falling back to sample dataset...');
-        
+        // Fall back to the original dataset
         try {
-          const sampleData = await this.dataLoader.loadData('/data/sample.json');
-          this.journalEntries = sampleData.entries;
-          console.log(`Successfully loaded ${this.journalEntries.length} sample entries`);
+          console.log('Falling back to original dataset...');
+          document.getElementById('loading-text').textContent = 'Loading original dataset instead...';
           
-          // Show a notification that we're using sample data
-          this.notifications.show('Using sample dataset - full dataset could not be loaded.');
-        } catch (sampleDataError) {
-          console.error('Error loading sample dataset:', sampleDataError);
-          throw new Error('Failed to load both main and sample datasets');
+          const originalData = await this.dataLoader.loadData('/data/warhol_final_optimized.json');
+          
+          // Validate data for missing relatedEntries
+          if (originalData.entries) {
+            let fixedCount = 0;
+            originalData.entries.forEach(entry => {
+              if (!entry.relatedEntries || !Array.isArray(entry.relatedEntries)) {
+                entry.relatedEntries = [];
+                fixedCount++;
+              }
+            });
+            if (fixedCount > 0) {
+              console.log(`Fixed ${fixedCount} entries with missing relatedEntries arrays`);
+            }
+          }
+          
+          this.journalEntries = originalData.entries;
+          console.log(`Successfully loaded ${this.journalEntries.length} entries from original dataset`);
+        } catch (originalError) {
+          console.error('Error loading original dataset:', originalError);
+          
+          // Fall back to the sample dataset
+          document.getElementById('loading-text').textContent = 'Loading sample dataset instead...';
+          console.log('Falling back to sample dataset...');
+          
+          try {
+            const sampleData = await this.dataLoader.loadData('/data/sample.json');
+            this.journalEntries = sampleData.entries;
+            console.log(`Successfully loaded ${this.journalEntries.length} sample entries`);
+            
+            // Show a notification that we're using sample data
+            this.notifications.show('Using sample dataset - full dataset could not be loaded.');
+          } catch (sampleError) {
+            console.error('Error loading sample dataset:', sampleError);
+            throw new Error('Failed to load all datasets');
+          }
         }
       }
       
@@ -653,6 +695,56 @@ class WarholJournalViz {
       reloadButton.addEventListener('click', () => window.location.reload());
       document.getElementById('loading').appendChild(reloadButton);
     }
+  }
+  
+  /**
+   * Validate and fix journal data structure
+   * @param {Object} data - The data object to validate
+   */
+  validateAndFixData(data) {
+    if (!data || !data.entries || !Array.isArray(data.entries)) {
+      console.error('Invalid data format: missing entries array');
+      return;
+    }
+    
+    console.log(`Validating ${data.entries.length} entries...`);
+    
+    // Count issues
+    let missingCoordinates = 0;
+    let missingRelatedEntries = 0;
+    let fixedRelatedEntries = 0;
+    
+    // Process each entry
+    data.entries.forEach((entry, index) => {
+      // Check for missing coordinates
+      if (!entry.coordinates) {
+        missingCoordinates++;
+        console.warn(`Entry ${entry.id || index} is missing coordinates`);
+        
+        // Provide a default position to prevent issues
+        entry.coordinates = { x: 0, y: 0, z: 0 };
+      }
+      
+      // Check for missing relatedEntries array
+      if (!entry.relatedEntries || !Array.isArray(entry.relatedEntries)) {
+        missingRelatedEntries++;
+        
+        // Fix by creating an empty array
+        entry.relatedEntries = [];
+        fixedRelatedEntries++;
+      }
+    });
+    
+    // Log validation results
+    if (missingCoordinates > 0) {
+      console.warn(`Fixed ${missingCoordinates} entries missing coordinates`);
+    }
+    
+    if (missingRelatedEntries > 0) {
+      console.warn(`Fixed ${missingRelatedEntries} entries missing relatedEntries`);
+    }
+    
+    console.log(`Validation complete: fixed ${fixedRelatedEntries} issues`);
   }
   
   /**
