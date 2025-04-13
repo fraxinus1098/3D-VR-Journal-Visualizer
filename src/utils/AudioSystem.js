@@ -248,7 +248,6 @@ class AudioSystem {
       const sound = this.emotionSounds[emotion];
       if (sound && sound.audio && sound.playing) {
         sound.audio.pause();
-        sound.audio.currentTime = 0;
         sound.playing = false;
       }
     });
@@ -476,6 +475,86 @@ class AudioSystem {
     }
     
     this.initialized = false;
+  }
+  
+  /**
+   * Initializes the audio context and starts sounds after user interaction.
+   * This combines the init() logic with the interaction-specific setup previously in main.js.
+   * @param {Object} dependencies - External dependencies required for initialization.
+   * @param {Array} dependencies.journalEntries - The journal entries data.
+   * @param {THREE.Camera} dependencies.camera - The main scene camera.
+   * @param {Notifications} dependencies.notifications - The notifications manager.
+   * @param {AudioControls} dependencies.audioControls - The audio controls UI.
+   * @returns {Promise<boolean>} Resolves true if initialization was successful or already done, false otherwise.
+   */
+  async initContextAndSounds({ journalEntries, camera, notifications, audioControls }) {
+    if (this.initialized) return true;
+
+    try {
+      console.log('Initializing audio system after user interaction');
+      await this.init(); // Perform core AudioContext setup and sound loading
+      
+      // Resume AudioContext if suspended (double-check after init)
+      if (this.audioContext.state === 'suspended') {
+        console.log('AudioContext suspended - attempting to resume');
+        await this.audioContext.resume();
+      }
+      
+      // Calculate emotion centers using the provided entries
+      if (journalEntries && journalEntries.length > 0) {
+        console.log('Calculating emotion centers for audio');
+        this.calculateEmotionCenters(journalEntries);
+      } else {
+        console.warn('No journal entries provided for emotion center calculation');
+      }
+      
+      // Start playing all emotion sounds (initially at low volume)
+      console.log('Starting audio playback');
+      this.playAllEmotionSounds();
+      
+      // Force an immediate audio mix update based on camera position
+      const cameraPosition = new THREE.Vector3();
+      camera.getWorldPosition(cameraPosition);
+      this.updateAudioMix(cameraPosition);
+      
+      // Show brief notification via the provided manager
+      if (notifications) {
+        notifications.show('Audio system initialized. Press "T" to toggle controls, "I" to mute/unmute.');
+      }
+      
+      // Show audio controls briefly via the provided controls UI
+      if (audioControls) {
+        audioControls.show();
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+          audioControls.hide();
+        }, 5000);
+      }
+      
+      // Add click handler for browsers that require click to start audio (if needed)
+      // This might be redundant if interaction already happened, but safe to keep.
+      document.addEventListener('click', () => {
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+          console.log('Resuming suspended AudioContext after subsequent click');
+          this.audioContext.resume().then(() => {
+            console.log('AudioContext resumed successfully');
+            // Ensure sounds are playing after resume
+            this.playAllEmotionSounds(); 
+          });
+        }
+      }, { once: true });
+      
+      return true; // Indicate success
+      
+    } catch (error) {
+      console.error('Failed to initialize audio:', error);
+      if (notifications) {
+        notifications.show('Failed to initialize audio. Press "R" to retry.'); // Consider adding retry logic if needed
+      }
+      this.initialized = false; // Ensure state reflects failure
+      return false; // Indicate failure
+    }
   }
 }
 

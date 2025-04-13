@@ -13,6 +13,7 @@ import AudioSystem from './utils/AudioSystem.js';
 import AudioControls from './ui/AudioControls.js';
 import PerformanceOptimizer from './utils/PerformanceOptimizer.js';
 import PerformanceMonitor from './ui/PerformanceMonitor.js';
+import UIManager from './core/UIManager.js';
 
 /**
  * Main class for the WebXR application
@@ -36,10 +37,10 @@ class WarholJournalViz {
     this.entryPanel = null;
     this.notifications = null;
     this.audioControls = null;
+    this.uiManager = null;
     
     // Audio system
     this.audioSystem = null;
-    this.audioInitialized = false;
     
     // Performance optimization
     this.performanceOptimizer = null;
@@ -80,7 +81,7 @@ class WarholJournalViz {
     // Append the renderer's canvas to the DOM
     document.getElementById('app').appendChild(this.renderer.domElement);
     
-    // Add VR button
+    // Add VR button AFTER renderer is in DOM
     document.getElementById('app').appendChild(VRButton.createButton(this.renderer));
     
     // Set up notifications
@@ -89,7 +90,7 @@ class WarholJournalViz {
     // Create audio system
     this.audioSystem = new AudioSystem();
     
-    // Create audio controls (will be shown later)
+    // Create audio controls (pass audioSystem reference)
     this.audioControls = new AudioControls(this.camera, this.scene, this.audioSystem);
     
     // Create orb visualizer
@@ -204,12 +205,22 @@ class WarholJournalViz {
     // Set up event listeners
     window.addEventListener('resize', this.onWindowResize.bind(this));
     
-    // Add audio initialization listener
-    document.addEventListener('click', this.initAudioOnInteraction.bind(this), { once: true });
-    document.addEventListener('keydown', this.initAudioOnInteraction.bind(this), { once: true });
-    
-    // Add keyboard controls for audio
-    document.addEventListener('keydown', this.handleKeyboardShortcuts.bind(this));
+    // Add listener to trigger audio initialization on first interaction
+    const handleFirstInteraction = async () => {
+      if (!this.audioSystem.initialized) {
+        await this.audioSystem.initContextAndSounds({
+          journalEntries: this.journalEntries,
+          camera: this.camera,
+          notifications: this.notifications,
+          audioControls: this.audioControls
+        });
+      }
+      // Remove listeners after first interaction
+      document.removeEventListener('click', handleFirstInteraction);
+      document.removeEventListener('keydown', handleFirstInteraction);
+    };
+    document.addEventListener('click', handleFirstInteraction, { once: true });
+    document.addEventListener('keydown', handleFirstInteraction, { once: true });
     
     // Create performance monitor
     this.performanceMonitor = new PerformanceMonitor({
@@ -218,162 +229,25 @@ class WarholJournalViz {
       showPanel: true
     });
     
+    // Create UI Manager AFTER all UI components are initialized
+    this.uiManager = new UIManager({
+      audioControls: this.audioControls,
+      minimap: this.minimap, // Will be created in createVisualization
+      emotionLegend: this.emotionLegend, // Will be created in createVisualization
+      performanceOptimizer: this.performanceOptimizer, // Will be created later
+      performanceMonitor: this.performanceMonitor,
+      notifications: this.notifications,
+      audioSystem: this.audioSystem,
+      renderer: this.renderer,
+      scene: this.scene,
+      camera: this.camera
+    });
+
+    // Add keyboard listener managed by UIManager
+    document.addEventListener('keydown', (event) => this.uiManager.handleKeyboardShortcuts(event));
+    
     // Start the animation loop using the built-in WebXR animation loop
     this.renderer.setAnimationLoop(this.animate.bind(this));
-  }
-  
-  /**
-   * Initialize audio after first user interaction (required by browsers)
-   */
-  async initAudioOnInteraction() {
-    if (this.audioInitialized) return;
-    
-    try {
-      console.log('Initializing audio system after user interaction');
-      await this.audioSystem.init();
-      
-      // Resume AudioContext if suspended
-      if (this.audioSystem.audioContext.state === 'suspended') {
-        console.log('AudioContext suspended - attempting to resume');
-        await this.audioSystem.audioContext.resume();
-      }
-      
-      // Calculate emotion centers first
-      if (this.journalEntries && this.journalEntries.length > 0) {
-        console.log('Calculating emotion centers for audio');
-        this.audioSystem.calculateEmotionCenters(this.journalEntries);
-      } else {
-        console.warn('No journal entries available for emotion center calculation');
-      }
-      
-      // Start playing all emotion sounds (initially at zero volume)
-      console.log('Starting audio playback');
-      this.audioSystem.playAllEmotionSounds();
-      
-      // Force an immediate audio mix update
-      const cameraPosition = new THREE.Vector3();
-      this.camera.getWorldPosition(cameraPosition);
-      this.audioSystem.updateAudioMix(cameraPosition);
-      
-      // Show brief notification
-      this.notifications.show('Audio system initialized. Press "T" to toggle audio controls, "I" to mute/unmute.');
-      
-      // Show audio controls briefly
-      if (this.audioControls) {
-        this.audioControls.show();
-        
-        // Auto-hide after 5 seconds
-        setTimeout(() => {
-          this.audioControls.hide();
-        }, 5000);
-      }
-      
-      this.audioInitialized = true;
-      
-      // Add click handler for browsers that require click to start audio
-      document.addEventListener('click', () => {
-        if (this.audioSystem && this.audioSystem.audioContext.state === 'suspended') {
-          console.log('Resuming suspended AudioContext after click');
-          this.audioSystem.audioContext.resume().then(() => {
-            console.log('AudioContext resumed successfully');
-            this.audioSystem.playAllEmotionSounds();
-          });
-        }
-      }, { once: true });
-      
-    } catch (error) {
-      console.error('Failed to initialize audio:', error);
-      this.notifications.show('Failed to initialize audio. Press "R" to retry.');
-    }
-  }
-  
-  /**
-   * Handle keyboard shortcuts
-   * @param {KeyboardEvent} event - Keyboard event
-   */
-  handleKeyboardShortcuts(event) {
-    // Skip if inside a text input
-    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
-      return;
-    }
-    
-    switch(event.key.toLowerCase()) {
-      // Toggle audio controls with 't' key (t for tune/audio)
-      case 't':
-        if (this.audioControls) {
-          this.audioControls.visible ? this.audioControls.hide() : this.audioControls.show();
-          if (this.audioControls.visible) {
-            this.notifications.show('Audio controls visible. Press T to hide.');
-          }
-        }
-        break;
-      
-      // Toggle minimap with 'm' key
-      case 'm':
-        if (this.minimap) {
-          try {
-            // Add extra error handling when toggling minimap
-            const isVisible = this.minimap.toggle();
-            this.notifications.show(isVisible ? 'Minimap visible' : 'Minimap hidden');
-            
-            // Force a single render update to properly show/hide minimap
-            this.renderer.render(this.scene, this.camera);
-          } catch (error) {
-            console.error('Error toggling minimap:', error);
-            this.notifications.show('Error toggling minimap');
-          }
-        }
-        break;
-      
-      // Toggle emotion legend with 'e' key
-      case 'e':
-        if (this.emotionLegend) {
-          try {
-            // Add extra error handling when toggling emotion legend
-            const isVisible = this.emotionLegend.toggle();
-            this.notifications.show(isVisible ? 'Emotion legend visible' : 'Emotion legend hidden');
-            
-            // Force a single render update to properly show/hide
-            this.renderer.render(this.scene, this.camera);
-          } catch (error) {
-            console.error('Error toggling emotion legend:', error);
-            this.notifications.show('Error toggling emotion legend');
-          }
-        }
-        break;
-      
-      // Toggle performance optimizations with 'p' key
-      case 'p':
-        if (this.performanceOptimizer) {
-          if (this.performanceOptimizer.isEnabled) {
-            this.performanceOptimizer.disable();
-            this.notifications.show('Performance optimizations disabled. Press P to enable.');
-          } else {
-            this.performanceOptimizer.enable();
-            this.notifications.show('Performance optimizations enabled. Press P to disable.');
-          }
-        }
-        break;
-      
-      // Toggle performance monitor with 'f' key
-      case 'f':
-        if (this.performanceMonitor) {
-          this.performanceMonitor.toggle();
-          this.notifications.show('Performance monitor toggled.');
-        }
-        break;
-      
-      // Toggle audio mute with 'i' key (instead of space)
-      case 'i':
-        if (this.audioSystem) {
-          this.audioSystem.toggleMute();
-          if (this.audioControls) {
-            this.audioControls.updateMuteButton();
-          }
-          this.notifications.show(this.audioSystem.muted ? 'Audio muted' : 'Audio unmuted');
-        }
-        break;
-    }
   }
   
   addLighting() {
@@ -573,7 +447,7 @@ class WarholJournalViz {
     }
     
     // Play selection sound
-    if (this.audioSystem && this.audioInitialized) {
+    if (this.audioSystem && this.audioSystem.initialized) {
       this.audioSystem.playSelectSound();
     }
     
@@ -844,6 +718,10 @@ class WarholJournalViz {
     
     // Show welcome notification
     this.notifications.show('Warhol Journal Visualization loaded. Click/press to select entries.');
+    
+    // Update UI Manager with components created after initial setup
+    this.uiManager.minimap = this.minimap;
+    this.uiManager.emotionLegend = this.emotionLegend;
   }
   
   /**
@@ -871,6 +749,9 @@ class WarholJournalViz {
     
     // Initialize with orbs and camera
     this.performanceOptimizer.init(orbsToOptimize, this.camera);
+    
+    // Update UI Manager with the performance optimizer
+    this.uiManager.performanceOptimizer = this.performanceOptimizer;
   }
   
   /**
