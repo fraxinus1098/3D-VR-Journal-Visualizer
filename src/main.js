@@ -11,6 +11,8 @@ import OrbVisualizer from './visualizers/OrbVisualizer.js';
 import InteractionManager from './utils/InteractionManager.js';
 import AudioSystem from './utils/AudioSystem.js';
 import AudioControls from './ui/AudioControls.js';
+import PerformanceOptimizer from './utils/PerformanceOptimizer.js';
+import PerformanceMonitor from './ui/PerformanceMonitor.js';
 
 /**
  * Main class for the WebXR application
@@ -38,6 +40,10 @@ class WarholJournalViz {
     // Audio system
     this.audioSystem = null;
     this.audioInitialized = false;
+    
+    // Performance optimization
+    this.performanceOptimizer = null;
+    this.performanceMonitor = null;
     
     // Data management
     this.dataLoader = new DataLoader();
@@ -205,6 +211,13 @@ class WarholJournalViz {
     // Add keyboard controls for audio
     document.addEventListener('keydown', this.handleKeyboardShortcuts.bind(this));
     
+    // Create performance monitor
+    this.performanceMonitor = new PerformanceMonitor({
+      updateInterval: 1000,
+      avgSamples: 30,
+      showPanel: true
+    });
+    
     // Start the animation loop using the built-in WebXR animation loop
     this.renderer.setAnimationLoop(this.animate.bind(this));
   }
@@ -243,7 +256,7 @@ class WarholJournalViz {
       this.audioSystem.updateAudioMix(cameraPosition);
       
       // Show brief notification
-      this.notifications.show('Audio system initialized. Press "A" to toggle audio controls.');
+      this.notifications.show('Audio system initialized. Press "T" to toggle audio controls, "I" to mute/unmute.');
       
       // Show audio controls briefly
       if (this.audioControls) {
@@ -276,76 +289,101 @@ class WarholJournalViz {
   
   /**
    * Handle keyboard shortcuts
-   * @param {KeyboardEvent} event - The keyboard event
+   * @param {KeyboardEvent} event - Keyboard event
    */
   handleKeyboardShortcuts(event) {
-    // 'A' key to toggle audio controls
-    if (event.key.toLowerCase() === 'a') {
-      if (this.audioControls) {
-        this.audioControls.toggle();
-      }
+    // Skip if inside a text input
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+      return;
     }
     
-    // 'M' key to toggle mute
-    if (event.key.toLowerCase() === 'm') {
-      if (this.audioSystem && this.audioInitialized) {
-        const muted = this.audioSystem.toggleMute();
-        this.notifications.show(`Audio ${muted ? 'muted' : 'unmuted'}`);
-        
+    switch(event.key.toLowerCase()) {
+      // Toggle audio controls with 't' key (t for tune/audio)
+      case 't':
         if (this.audioControls) {
-          this.audioControls.updateSpeakerIcon();
-        }
-      }
-    }
-    
-    // 'R' key to retry audio initialization
-    if (event.key.toLowerCase() === 'r' && !this.audioInitialized) {
-      this.initAudioOnInteraction();
-    }
-    
-    // 'D' key to toggle debug visualization
-    if (event.key.toLowerCase() === 'd') {
-      this.addAudioDebugElements();
-      this.notifications.show('Added audio debug elements');
-    }
-    
-    // '1-8' keys to play individual emotion sounds at max volume for testing
-    if (this.audioSystem && this.audioInitialized && event.key >= '1' && event.key <= '8') {
-      const index = parseInt(event.key) - 1;
-      const emotions = ['joy', 'trust', 'fear', 'surprise', 'sadness', 'disgust', 'anger', 'anticipation'];
-      
-      if (index >= 0 && index < emotions.length) {
-        const emotion = emotions[index];
-        
-        // Set all volumes to zero except the selected one
-        Object.keys(this.audioSystem.emotionSounds).forEach(e => {
-          if (this.audioSystem.emotionSounds[e] && this.audioSystem.emotionSounds[e].gain) {
-            this.audioSystem.emotionSounds[e].gain.gain.value = (e === emotion) ? 0.8 : 0;
+          this.audioControls.visible ? this.audioControls.hide() : this.audioControls.show();
+          if (this.audioControls.visible) {
+            this.notifications.show('Audio controls visible. Press T to hide.');
           }
-        });
-        
-        this.notifications.show(`Playing only ${emotion} sound`);
-      }
-    }
-    
-    // '0' key to reset audio mix to distance-based
-    if (this.audioSystem && this.audioInitialized && event.key === '0') {
-      // Reset to normal distance-based mixing
-      const cameraPosition = new THREE.Vector3();
-      this.camera.getWorldPosition(cameraPosition);
-      this.audioSystem.updateAudioMix(cameraPosition);
-      this.notifications.show('Reset to normal audio mixing');
+        }
+        break;
+      
+      // Toggle minimap with 'm' key
+      case 'm':
+        if (this.minimap) {
+          try {
+            // Add extra error handling when toggling minimap
+            const isVisible = this.minimap.toggle();
+            this.notifications.show(isVisible ? 'Minimap visible' : 'Minimap hidden');
+            
+            // Force a single render update to properly show/hide minimap
+            this.renderer.render(this.scene, this.camera);
+          } catch (error) {
+            console.error('Error toggling minimap:', error);
+            this.notifications.show('Error toggling minimap');
+          }
+        }
+        break;
+      
+      // Toggle emotion legend with 'e' key
+      case 'e':
+        if (this.emotionLegend) {
+          try {
+            // Add extra error handling when toggling emotion legend
+            const isVisible = this.emotionLegend.toggle();
+            this.notifications.show(isVisible ? 'Emotion legend visible' : 'Emotion legend hidden');
+            
+            // Force a single render update to properly show/hide
+            this.renderer.render(this.scene, this.camera);
+          } catch (error) {
+            console.error('Error toggling emotion legend:', error);
+            this.notifications.show('Error toggling emotion legend');
+          }
+        }
+        break;
+      
+      // Toggle performance optimizations with 'p' key
+      case 'p':
+        if (this.performanceOptimizer) {
+          if (this.performanceOptimizer.isEnabled) {
+            this.performanceOptimizer.disable();
+            this.notifications.show('Performance optimizations disabled. Press P to enable.');
+          } else {
+            this.performanceOptimizer.enable();
+            this.notifications.show('Performance optimizations enabled. Press P to disable.');
+          }
+        }
+        break;
+      
+      // Toggle performance monitor with 'f' key
+      case 'f':
+        if (this.performanceMonitor) {
+          this.performanceMonitor.toggle();
+          this.notifications.show('Performance monitor toggled.');
+        }
+        break;
+      
+      // Toggle audio mute with 'i' key (instead of space)
+      case 'i':
+        if (this.audioSystem) {
+          this.audioSystem.toggleMute();
+          if (this.audioControls) {
+            this.audioControls.updateMuteButton();
+          }
+          this.notifications.show(this.audioSystem.muted ? 'Audio muted' : 'Audio unmuted');
+        }
+        break;
     }
   }
   
   addLighting() {
-    // Add ambient light for general illumination
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    // Ambient light for base illumination
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
     this.scene.add(ambientLight);
     
-    // Add directional light for shadows and highlights
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(0, 10, 10);
+    // Directional light for shadows and highlights
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    directionalLight.position.set(1, 1, 1).normalize();
     this.scene.add(directionalLight);
   }
   
@@ -377,7 +415,12 @@ class WarholJournalViz {
     }
   }
   
-  animate() {
+  animate(timestamp) {
+    // Start performance monitoring for this frame
+    if (this.performanceMonitor) {
+      this.performanceMonitor.begin();
+    }
+    
     // Update VR controller
     if (this.vrController) {
       this.vrController.update();
@@ -388,6 +431,15 @@ class WarholJournalViz {
       // Tell desktop controls if we're in VR mode
       this.desktopControls.setVRStatus(this.renderer.xr.isPresenting);
       this.desktopControls.update();
+    }
+    
+    // Get camera position for audio and other position-based features
+    const cameraPosition = new THREE.Vector3();
+    this.camera.getWorldPosition(cameraPosition);
+    
+    // Update audio system
+    if (this.audioSystem && this.audioSystem.audioContext && this.audioSystem.audioContext.state === 'running') {
+      this.audioSystem.updateAudioMix(cameraPosition);
     }
     
     // Update orb visualizer
@@ -415,15 +467,22 @@ class WarholJournalViz {
       this.audioControls.updatePosition();
     }
     
-    // Update audio mix based on camera position
-    if (this.audioSystem && this.audioInitialized) {
-      const cameraPosition = new THREE.Vector3();
-      this.camera.getWorldPosition(cameraPosition);
-      this.audioSystem.updateAudioMix(cameraPosition);
+    // Update performance optimizer
+    if (this.performanceOptimizer) {
+      this.performanceOptimizer.update();
     }
     
     // Render the scene
     this.renderer.render(this.scene, this.camera);
+    
+    // End performance monitoring for this frame
+    if (this.performanceMonitor && this.performanceOptimizer) {
+      this.performanceMonitor.end(
+        this.performanceOptimizer.visibleCount,
+        this.performanceOptimizer.culledCount,
+        this.performanceOptimizer.isEnabled
+      );
+    }
   }
   
   /**
@@ -497,31 +556,130 @@ class WarholJournalViz {
    * @param {Object} selectedObj - The selected object
    */
   handleSelection(selectedObj) {
-    if (!selectedObj) return;
+    if (!selectedObj) {
+      console.log('handleSelection called with null object');
+      return;
+    }
+    
+    console.log('Selected object:', selectedObj.uuid, 'Type:', selectedObj.userData?.type);
+    
+    // First, completely disable performance optimization if it's enabled
+    if (this.performanceOptimizer && this.performanceOptimizer.isEnabled) {
+      console.log('Temporarily disabling performance optimization for selection');
+      this.performanceOptimizer.temporarilyDisable();
+      
+      // Force a render cycle to ensure all objects are properly restored
+      this.renderer.render(this.scene, this.camera);
+    }
     
     // Play selection sound
     if (this.audioSystem && this.audioInitialized) {
       this.audioSystem.playSelectSound();
     }
     
-    if (selectedObj.userData.type === 'journal-entry') {
-      // Highlight related entries
-      if (this.orbVisualizer) {
-        this.orbVisualizer.highlightRelatedEntries(selectedObj);
+    if (selectedObj.userData && selectedObj.userData.type === 'journal-entry') {
+      console.log('Journal entry selected:', selectedObj.userData.entry?.id);
+      
+      // Ensure we have valid entry data
+      if (!selectedObj.userData.entry) {
+        console.warn('Selected orb has no entry data');
+        this.notifications.show('Error: Selected orb has no entry data');
+        return;
       }
       
-      // Display the entry panel
-      if (this.entryPanel) {
-        this.entryPanel.showEntry(selectedObj.userData.entry);
+      try {
+        // Explicitly mark the object as selected (for the performance optimizer)
+        selectedObj.userData.selected = true;
+        
+        // Highlight related entries
+        if (this.orbVisualizer) {
+          this.orbVisualizer.highlightRelatedEntries(selectedObj);
+        }
+        
+        // Use a timeout to ensure rendering has fully completed before showing the panel
+        setTimeout(() => {
+          try {
+            // Display the entry panel with error handling
+            if (this.entryPanel) {
+              const entry = selectedObj.userData.entry;
+              // Validate entry data before showing
+              if (!entry.text) {
+                console.warn('Entry is missing text content:', entry);
+                this.notifications.show('Error: Entry is missing text content');
+                return;
+              }
+              
+              // Clone the entry data to avoid any reference issues
+              const entryCopy = this.cloneEntryData(entry);
+              this.entryPanel.showEntry(entryCopy);
+            }
+            
+            // Show brief notification
+            const date = selectedObj.userData.entry.date ? 
+                        new Date(selectedObj.userData.entry.date).toLocaleDateString() : 'Unknown date';
+            this.notifications.show(`Selected: ${date}`);
+          } catch (error) {
+            console.error('Error displaying entry panel:', error);
+            this.notifications.show('Error displaying entry. Try another one.');
+            
+            // Cleanup in case of error
+            if (this.entryPanel && this.entryPanel.isVisible()) {
+              this.entryPanel.hide();
+            }
+          }
+        }, 50); // Small timeout to ensure state is fully updated
+        
+      } catch (error) {
+        console.error('Error in entry selection handling:', error);
+        this.notifications.show('Error selecting entry. Please try another one.');
       }
-      
-      // Show brief notification
-      const date = selectedObj.userData.entry.date ? 
-                  new Date(selectedObj.userData.entry.date).toLocaleDateString() : 'Unknown date';
-      this.notifications.show(`Selected: ${date}`);
-    } else if (selectedObj.userData.type === 'test-cube') {
+    } else if (selectedObj.userData && selectedObj.userData.type === 'test-cube') {
       console.log('Selected test cube');
       this.notifications.show('Test cube selected!');
+    } else {
+      console.log('Selected object with unknown type:', selectedObj.userData?.type);
+    }
+  }
+  
+  /**
+   * Create a safe clone of entry data to avoid reference issues
+   * @param {Object} entry - The original entry data
+   * @returns {Object} A clone of the entry
+   */
+  cloneEntryData(entry) {
+    try {
+      const cloned = {
+        id: entry.id,
+        date: entry.date,
+        text: entry.text,
+        location: entry.location,
+        topics: Array.isArray(entry.topics) ? [...entry.topics] : [],
+        emotions: entry.emotions ? {...entry.emotions} : {},
+        entities: {}
+      };
+      
+      // Clone entities if they exist
+      if (entry.entities) {
+        cloned.entities = {};
+        if (Array.isArray(entry.entities.people)) cloned.entities.people = [...entry.entities.people];
+        if (Array.isArray(entry.entities.places)) cloned.entities.places = [...entry.entities.places];
+      }
+      
+      // Copy coordinates but don't include in panel display
+      if (entry.coordinates) {
+        cloned.coordinates = {...entry.coordinates};
+      }
+      
+      // Copy related entries array but don't include in panel display
+      if (Array.isArray(entry.relatedEntries)) {
+        cloned.relatedEntries = [...entry.relatedEntries];
+      }
+      
+      return cloned;
+    } catch (error) {
+      console.error('Error cloning entry data:', error);
+      // Return the original if cloning fails
+      return entry;
     }
   }
   
@@ -530,6 +688,11 @@ class WarholJournalViz {
    * @param {Object} deselectedObj - The deselected object
    */
   handleDeselection(deselectedObj) {
+    // Clear selected flag if present
+    if (deselectedObj && deselectedObj.userData) {
+      deselectedObj.userData.selected = false;
+    }
+    
     // Clean up related entry highlighting
     if (this.orbVisualizer) {
       this.orbVisualizer.cleanupRelatedEntries();
@@ -538,6 +701,15 @@ class WarholJournalViz {
     // Hide the entry panel
     if (this.entryPanel) {
       this.entryPanel.hide();
+    }
+    
+    // Resume performance optimizations if they were temporarily disabled
+    if (this.performanceOptimizer && this.performanceOptimizer.temporarilyDisabled) {
+      // Use a timeout to ensure all cleanup is complete
+      setTimeout(() => {
+        console.log('Resuming performance optimizations after deselection');
+        this.performanceOptimizer.resumeOptimizations();
+      }, 100);
     }
   }
   
@@ -623,31 +795,41 @@ class WarholJournalViz {
       console.log(`Positioned camera at: ${x.toFixed(2)}, ${(y + 1.6).toFixed(2)}, ${(z + 5).toFixed(2)}`);
     }
     
-    // Set up minimap with proper Y range
+    // Create minimap with proper Y range
     this.minimap = new Minimap(this.camera, this.scene, {
-      yRangeMin: orbStats.yRange.min - 2,
-      yRangeMax: orbStats.yRange.max + 2
+      yRangeMin: orbStats.yRange ? orbStats.yRange.min - 2 : -10,
+      yRangeMax: orbStats.yRange ? orbStats.yRange.max + 2 : 30
     });
+    console.log('Minimap created');
     
     // Add data points to minimap
-    this.journalEntries.forEach(entry => {
-      const emotionColor = this.orbVisualizer.blendEmotionColors(entry.emotions);
-      this.minimap.addPoint(
-        entry.coordinates.x,
-        entry.coordinates.z,
-        {
-          y: entry.coordinates.y,
-          color: emotionColor,
-          showHeight: true
+    if (this.minimap && this.journalEntries) {
+      this.journalEntries.forEach(entry => {
+        if (entry.coordinates) {
+          const emotionColor = this.orbVisualizer.blendEmotionColors(entry.emotions);
+          this.minimap.addPoint(
+            entry.coordinates.x,
+            entry.coordinates.z,
+            {
+              y: entry.coordinates.y,
+              color: emotionColor,
+              showHeight: true
+            }
+          );
         }
-      );
-    });
+      });
+    }
     
-    // Set up emotion legend
-    this.emotionLegend = new EmotionLegend(this.camera, this.scene);
+    // Create emotion legend
+    this.emotionLegend = new EmotionLegend(this.camera, this.scene, {
+      colorMap: this.orbVisualizer.emotionColorsRGB
+    });
+    console.log('Emotion legend created');
     
     // Set up audio emotion centers if audio system is available 
-    // NOTE: This is now done in initAudioOnInteraction to ensure proper initialization order
+    if (this.audioSystem && this.audioSystem.audioContext) {
+      this.audioSystem.calculateEmotionCenters(this.journalEntries);
+    }
     
     // Hide test cube if it exists
     if (this.testCube) {
@@ -656,6 +838,39 @@ class WarholJournalViz {
     
     // Add some debug elements for testing audio
     this.addAudioDebugElements();
+    
+    // Initialize performance optimizer
+    this.initPerformanceOptimizer();
+    
+    // Show welcome notification
+    this.notifications.show('Warhol Journal Visualization loaded. Click/press to select entries.');
+  }
+  
+  /**
+   * Initialize the performance optimizer
+   */
+  initPerformanceOptimizer() {
+    // Create performance optimizer
+    this.performanceOptimizer = new PerformanceOptimizer({
+      cullingDistance: 20,
+      updateFrequency: 5,
+      lodDistances: [5, 10, 20],
+      lodDetailLevels: [16, 12, 8, 4],
+      lodMaterialSimplify: true,
+      debug: false
+    });
+    
+    // Get all orbs to optimize
+    const orbsToOptimize = [];
+    if (this.orbVisualizer) {
+      // Add all orbs from orbVisualizer
+      this.orbVisualizer.orbObjects.forEach((orb) => {
+        orbsToOptimize.push(orb);
+      });
+    }
+    
+    // Initialize with orbs and camera
+    this.performanceOptimizer.init(orbsToOptimize, this.camera);
   }
   
   /**
@@ -715,6 +930,59 @@ class WarholJournalViz {
         console.log(`Added debug marker for ${emotion} at ${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`);
       });
     }
+  }
+  
+  /**
+   * Clean up and dispose resources when application is closed
+   */
+  dispose() {
+    // Dispose visualizer resources
+    if (this.orbVisualizer) {
+      this.orbVisualizer.dispose();
+    }
+    
+    // Dispose UI components
+    if (this.minimap) this.minimap.dispose();
+    if (this.emotionLegend) this.emotionLegend.dispose();
+    if (this.entryPanel) this.entryPanel.dispose();
+    if (this.notifications) this.notifications.dispose();
+    if (this.audioControls) this.audioControls.dispose();
+    if (this.performanceMonitor) this.performanceMonitor.dispose();
+    
+    // Dispose controllers
+    if (this.vrController) this.vrController.dispose();
+    if (this.desktopControls) this.desktopControls.dispose();
+    
+    // Dispose interaction manager
+    if (this.interactionManager) this.interactionManager.dispose();
+    
+    // Dispose audio system
+    if (this.audioSystem) this.audioSystem.dispose();
+    
+    // Dispose performance optimizer
+    if (this.performanceOptimizer) {
+      this.performanceOptimizer.dispose();
+    }
+    
+    // Stop animation loop
+    this.renderer.setAnimationLoop(null);
+    
+    // Remove event listeners
+    window.removeEventListener('resize', this.onWindowResize.bind(this));
+    
+    // Dispose scene and renderer
+    this.scene.traverse(object => {
+      if (object.geometry) object.geometry.dispose();
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach(material => material.dispose());
+        } else {
+          object.material.dispose();
+        }
+      }
+    });
+    
+    this.renderer.dispose();
   }
 }
 

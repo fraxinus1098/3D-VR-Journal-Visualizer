@@ -30,8 +30,21 @@ export default class InteractionManager {
    * @param {Object} selectedObj - The object to select
    */
   handleSelection(selectedObj) {
+    // Validate the selected object
+    if (!selectedObj || !selectedObj.userData) {
+      console.warn('Attempted to select invalid object', selectedObj);
+      if (this.selectedObject) {
+        this.deselectObject();
+      }
+      return;
+    }
+    
+    console.log(`InteractionManager: Handling selection of object ${selectedObj.uuid}`, 
+      selectedObj.userData.type ? `type: ${selectedObj.userData.type}` : 'no type');
+    
     // If clicking the already selected object, deselect it
     if (this.selectedObject === selectedObj) {
+      console.log('Deselecting currently selected object');
       this.deselectObject();
       return;
     }
@@ -44,14 +57,27 @@ export default class InteractionManager {
     // Select new object
     this.selectedObject = selectedObj;
     
+    // Mark object as selected for performance optimizer
+    if (selectedObj.userData) {
+      selectedObj.userData.selected = true;
+    }
+    
     // Apply selection effect if visualizer is available
     if (this.visualizer) {
-      this.visualizer.applySelectionEffect(selectedObj);
+      try {
+        this.visualizer.applySelectionEffect(selectedObj);
+      } catch (error) {
+        console.error('Error applying selection effect:', error);
+      }
     }
     
     // Call onSelect callback if provided
     if (this.onSelect) {
-      this.onSelect(selectedObj);
+      try {
+        this.onSelect(selectedObj);
+      } catch (error) {
+        console.error('Error in selection callback:', error);
+      }
     }
   }
   
@@ -63,6 +89,11 @@ export default class InteractionManager {
       // Reset the object's material if visualizer is available
       if (this.visualizer) {
         this.visualizer.resetObjectMaterial(this.selectedObject);
+      }
+      
+      // Unmark object as selected
+      if (this.selectedObject.userData) {
+        this.selectedObject.userData.selected = false;
       }
       
       // Store the object being deselected for the callback

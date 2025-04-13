@@ -278,39 +278,65 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 ### Phase 4: Refinement & Testing (Estimated time: 1-2 hours)
 
 #### Phase 4.1: Performance Optimizations
+**Status:** Complete
+
 **Tasks:**
-- Implement frustum culling for distant objects
-- Apply level-of-detail techniques
-- Optimize render performance
+- [x] Implement frustum culling for distant objects
+- [x] Apply level-of-detail techniques
+- [x] Optimize render performance
 
 **Key Points:**
-- Only render objects in the camera's view frustum
-- Use simpler materials for distant objects
-- Consider instanced meshes for similar orbs if performance issues arise
-- Test performance on Quest 3 hardware
+- Created PerformanceOptimizer class for frustum culling and LOD
+- Implemented distance-based level-of-detail for orbs with lower geometry detail
+- Added material simplification for distant objects
+- Created PerformanceMonitor to visualize performance metrics
+- Added keyboard toggles:
+  - 'P' key to toggle performance optimizations
+  - 'F' key to toggle performance monitor display
+  - 'I' key to toggle audio mute (changed from spacebar)
+- Implemented smart geometry caching to reduce memory usage
+- Only update culling calculations every N frames to reduce CPU usage
+- Added resource disposal functions to free memory when objects are no longer needed
+- Fixed bug causing orbs to freeze when selected in performance-optimized mode
 
-#### Phase 4.2: Deployment Preparation
+#### Phase 4.2: Development Optimization for Demonstration
 **Tasks:**
-- Set up GitHub repository
-- Configure build process for production
-- Create deployment scripts
+- Configure local server for network access
+- Optimize data loading for local network
+- Create demonstration setup scripts
 
 **Key Points:**
-- Initialize Git repository
-- Configure Vite for GitHub Pages base path
-- Add appropriate scripts to package.json
-- Create proper .gitignore file
+- Configure Vite for optimal local network access with HTTPS for WebXR compatibility
+- Implement progressive loading or chunking for the large data file
+- Create specific npm scripts for demonstration setup (e.g., `npm run demo`)
+- Ensure stable performance across local WiFi networks for presentation
 
-#### Phase 4.3: Testing and Final Deployment
+#### Phase 4.3: Testing and Presentation Setup
 **Tasks:**
 - Test locally with WebXR emulator
-- Build for production
-- Deploy to GitHub Pages
-- Test on Quest 3
+- Test on Quest 3 with Oculus Cast
+- Prepare projector display setup
+- Create user guide for demonstration
 
 **Key Points:**
 - Add fallback controls for non-VR testing
-- Create production build with optimizations
-- Deploy to GitHub Pages
-- Test thoroughly on Quest 3 device
-- Document the testing process
+- Test Oculus Cast performance and quality for audience viewing
+- Configure laptop for simultaneous Quest 3 connection and projector output
+- Document step-by-step setup process for smooth presentation
+- Create simple guide for presentation mode navigation
+
+#### Phase 4.4: Bug Fixes and Refinements
+**Status:** Complete
+
+**Tasks:**
+- [x] Fix audio control issues
+- [x] Resolve performance optimization bugs
+- [x] General stability improvements
+
+**Key Points:**
+- Changed audio mute toggle from spacebar to 'I' key to avoid conflicts with other controls
+- Fixed bug where orbs would freeze when selected while performance optimizations were enabled
+- Improved orb selection and highlighting with proper cleanup of materials and resources
+- Enhanced performance optimizer to temporarily disable optimizations during selection interaction
+- Added better error handling and recovery in selection workflow
+- Implemented proper resource cleanup to prevent memory leaks

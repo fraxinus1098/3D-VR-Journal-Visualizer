@@ -29,6 +29,9 @@ export default class Minimap {
     this.playerMarker = null;
     this.elevationLine = null;
     
+    // Visibility flag
+    this.visible = true;
+    
     this.init();
   }
   
@@ -279,7 +282,8 @@ export default class Minimap {
    * Update the minimap view
    */
   update() {
-    if (!this.minimapRenderer || !this.playerMarker) return;
+    // Skip update if not visible or components aren't available
+    if (!this.visible || !this.minimapRenderer || !this.playerMarker) return;
     
     // Update player marker position from camera
     this.playerMarker.position.x = this.camera.position.x;
@@ -330,8 +334,12 @@ export default class Minimap {
     this.minimapCamera.position.x = this.camera.position.x;
     this.minimapCamera.position.z = this.camera.position.z;
     
-    // Render minimap
-    this.minimapRenderer.render(this.minimapScene, this.minimapCamera);
+    try {
+      // Render minimap safely
+      this.minimapRenderer.render(this.minimapScene, this.minimapCamera);
+    } catch (error) {
+      console.error('Error rendering minimap:', error);
+    }
   }
   
   /**
@@ -356,5 +364,57 @@ export default class Minimap {
     
     // Remove event listeners
     window.removeEventListener('resize', this.onWindowResize.bind(this));
+  }
+
+  /**
+   * Show the minimap
+   */
+  show() {
+    if (!this.visible) {
+      // Only do something if it's not already visible
+      if (this.minimapRenderer) {
+        this.minimapRenderer.domElement.style.display = 'block';
+      }
+      if (this.elevationGauge && this.elevationGauge.parentNode) {
+        this.elevationGauge.style.display = 'block';
+      }
+      if (this.coordDisplay && this.coordDisplay.parentNode) {
+        this.coordDisplay.style.display = 'block';
+      }
+      this.visible = true;
+      console.log('Minimap: show');
+    }
+  }
+
+  /**
+   * Hide the minimap
+   */
+  hide() {
+    if (this.visible) {
+      // Only do something if it's currently visible
+      if (this.minimapRenderer) {
+        this.minimapRenderer.domElement.style.display = 'none';
+      }
+      if (this.elevationGauge && this.elevationGauge.parentNode) {
+        this.elevationGauge.style.display = 'none';
+      }
+      if (this.coordDisplay && this.coordDisplay.parentNode) {
+        this.coordDisplay.style.display = 'none';
+      }
+      this.visible = false;
+      console.log('Minimap: hide');
+    }
+  }
+
+  /**
+   * Toggle minimap visibility
+   */
+  toggle() {
+    if (this.visible) {
+      this.hide();
+    } else {
+      this.show();
+    }
+    return this.visible;
   }
 } 

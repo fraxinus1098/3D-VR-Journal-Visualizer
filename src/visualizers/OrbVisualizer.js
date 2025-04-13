@@ -65,29 +65,51 @@ export default class OrbVisualizer {
     let sumX = 0, sumY = 0, sumZ = 0;
     let minY = Infinity, maxY = -Infinity;
     let count = 0;
+    let skippedCount = 0;
     
     // Create orbs for each journal entry
-    journalEntries.forEach(entry => {
-      const orb = this.createOrb(entry);
-      this.orbGroup.add(orb);
-      this.orbObjects.set(entry.id, orb);
+    journalEntries.forEach((entry, index) => {
+      // Validate entry data
+      if (!entry || !entry.id || !entry.coordinates) {
+        console.warn(`Skipping invalid entry at index ${index}:`, entry);
+        skippedCount++;
+        return;
+      }
       
-      // Add orb position to sum for average calculation
-      sumX += entry.coordinates.x;
-      sumY += entry.coordinates.y;
-      sumZ += entry.coordinates.z;
-      count++;
-      
-      // Track min/max Y values for elevation gauge scaling
-      minY = Math.min(minY, entry.coordinates.y);
-      maxY = Math.max(maxY, entry.coordinates.y);
+      try {
+        const orb = this.createOrb(entry);
+        
+        if (orb) {
+          this.orbGroup.add(orb);
+          this.orbObjects.set(entry.id, orb);
+          
+          // Add orb position to sum for average calculation
+          sumX += entry.coordinates.x;
+          sumY += entry.coordinates.y;
+          sumZ += entry.coordinates.z;
+          count++;
+          
+          // Track min/max Y values for elevation gauge scaling
+          minY = Math.min(minY, entry.coordinates.y);
+          maxY = Math.max(maxY, entry.coordinates.y);
+        } else {
+          console.warn(`Failed to create orb for entry ${entry.id}`);
+          skippedCount++;
+        }
+      } catch (error) {
+        console.error(`Error creating orb for entry ${entry.id || index}:`, error);
+        skippedCount++;
+      }
     });
+    
+    console.log(`Created ${count} orbs, skipped ${skippedCount} invalid entries`);
     
     // Return statistics about created orbs
     return {
       count,
+      skippedCount,
       avgPosition: count > 0 ? { x: sumX / count, y: sumY / count, z: sumZ / count } : null,
-      yRange: { min: minY, max: maxY }
+      yRange: { min: minY !== Infinity ? minY : 0, max: maxY !== -Infinity ? maxY : 0 }
     };
   }
   
@@ -97,12 +119,19 @@ export default class OrbVisualizer {
    * @returns {THREE.Mesh} - The created orb mesh
    */
   createOrb(entry) {
+    if (!entry || !entry.id || !entry.coordinates) {
+      console.warn('Cannot create orb: Invalid entry data', entry);
+      return null;
+    }
+    
+    console.log(`Creating orb for entry ${entry.id}`);
+    
     // Calculate emotional intensity for sizing
     const emotionalIntensity = this.getEmotionIntensity(entry.emotions);
     const radius = this.options.baseSphereRadius + (emotionalIntensity * this.options.emotionScaleFactor);
     
     // Create sphere geometry with detail proportional to size
-    const segments = Math.max(this.options.baseSphereSegments, Math.floor(radius * 100));
+    const segments = Math.max(8, Math.min(this.options.baseSphereSegments, Math.floor(radius * 100)));
     const geometry = new THREE.SphereGeometry(radius, segments, segments);
     
     // Get color based on emotions (supports blending of multiple emotions)
@@ -131,9 +160,15 @@ export default class OrbVisualizer {
     );
     
     // Store the entry data with the orb for interaction
-    orb.userData.entry = entry;
-    orb.userData.interactive = true;
-    orb.userData.type = 'journal-entry';
+    orb.userData = {
+      entry: entry,
+      interactive: true,
+      type: 'journal-entry',
+      originalColor: color.clone()
+    };
+    
+    // Ensure orb has a unique ID for raycasting
+    orb.uuid = THREE.MathUtils.generateUUID();
     
     return orb;
   }
@@ -289,35 +324,43 @@ export default class OrbVisualizer {
   }
   
   /**
-   * Apply selection effect to an object
+   * Apply the highlight effect to show orb is selected
+   * @param {THREE.Object3D} object - The object to highlight
    */
   applySelectionEffect(object) {
-    // Optimization: Skip if object is null or undefined
-    if (!object) return;
-    
+    if (!object || !object.userData || object.userData.type !== 'journal-entry') {
+      console.warn('Invalid object passed to applySelectionEffect:', object);
+      return;
+    }
+
     try {
-      // Create a selection material based on the original
+      // Store original material if not already stored
+      if (!this.originalMaterials.has(object.uuid)) {
+        this.originalMaterials.set(object.uuid, object.material.clone());
+      }
+
+      // Create selection material based on original
       const selectionMaterial = object.material.clone();
       
-      // Make it significantly brighter and more emissive with a white tint
-      selectionMaterial.emissiveIntensity *= 2.0;
-      selectionMaterial.emissive.lerp(new THREE.Color(0xffffff), 0.5);
+      // Make the selection more vivid with increased emissive and glow
+      selectionMaterial.emissive = object.material.color ? 
+        object.material.color.clone() : 
+        new THREE.Color(1, 1, 1);
+      selectionMaterial.emissiveIntensity = 1.0;
       
-      // Add pulsing animation (will be updated in animate method)
-      object.userData.pulseAnimation = {
-        active: true,
-        baseEmissive: selectionMaterial.emissiveIntensity,
-        time: 0
-      };
+      // Add a white outline with higher opacity
+      selectionMaterial.opacity = 1.0;
       
-      // Apply the selection material
+      // Apply selection material
       object.material = selectionMaterial;
+      
+      // Add the object to related entries to ensure cleanup
+      this.relatedEntryObjects.push(object);
+      
+      // Log selection for debugging
+      console.log(`Selected object: ${object.uuid}`, object.userData.entry ? object.userData.entry.id : 'No entry');
     } catch (error) {
-      console.error('Error applying selection effect:', error);
-      // Fallback to avoid crashing: use original material if available
-      if (this.originalMaterials.has(object.uuid)) {
-        object.material = this.originalMaterials.get(object.uuid);
-      }
+      console.error('Error applying selection effect:', error, object);
     }
   }
   
@@ -379,103 +422,194 @@ export default class OrbVisualizer {
   }
   
   /**
-   * Highlight related entries when a journal entry is selected
-   * @param {Object} selectedObj - The selected Three.js object
+   * Highlight related entries when one entry is selected
+   * @param {THREE.Object3D} selectedObj - The selected object
    */
   highlightRelatedEntries(selectedObj) {
-    // Clean up any existing related entry effects
+    // First, make sure any previous related entries are cleaned up
     this.cleanupRelatedEntries();
     
-    // Only proceed if the object is a journal entry
-    if (!selectedObj || !selectedObj.userData || selectedObj.userData.type !== 'journal-entry') {
+    // Validate the selected object
+    if (!selectedObj || !selectedObj.userData || !selectedObj.userData.entry) {
+      console.warn('Cannot highlight related entries: Invalid selection or missing entry data');
       return;
     }
     
-    const entry = selectedObj.userData.entry;
-    
-    // Skip if the entry doesn't have related entries or is missing required data
-    if (!entry || !entry.relatedEntries || !Array.isArray(entry.relatedEntries) || entry.relatedEntries.length === 0) {
-      console.warn('No related entries found for selected entry:', entry?.id);
-      return;
-    }
-    
-    console.log(`Processing ${entry.relatedEntries.length} related entries for entry ${entry.id}`);
-    
-    // Get related orb objects using the orbObjects map
-    entry.relatedEntries.forEach(relatedId => {
-      const relatedOrb = this.orbObjects.get(relatedId);
-      
-      if (relatedOrb) {
-        // Store original material
-        if (!this.originalMaterials.has(relatedOrb.uuid)) {
-          this.originalMaterials.set(relatedOrb.uuid, relatedOrb.material.clone());
-        }
-        
-        // Apply a subtle highlight effect
-        const relatedMaterial = relatedOrb.material.clone();
-        relatedMaterial.emissiveIntensity *= 1.3;
-        relatedMaterial.emissive.lerp(new THREE.Color(0x00ffff), 0.3); // Cyan tint for related entries
-        relatedOrb.material = relatedMaterial;
-        
-        // Add to the related objects array for cleanup later
-        this.relatedEntryObjects.push(relatedOrb);
-        
-        // Create a line connecting the selected orb to the related orb
-        this.createConnectionLine(selectedObj, relatedOrb);
-      } else {
-        console.warn(`Related entry ${relatedId} not found in orbObjects map`);
+    try {
+      // Get the performance optimizer from the scene if available
+      const performanceOptimizer = this.scene.userData?.performanceOptimizer;
+      if (performanceOptimizer) {
+        // Temporarily disable performance optimizations during selection
+        performanceOptimizer.temporarilyDisable();
       }
-    });
+      
+      // Apply selection effect to the selected object
+      this.applySelectionEffect(selectedObj);
+      
+      // Mark as selected for performance optimizer
+      selectedObj.userData.selected = true;
+      selectedObj.userData.optimizationDisabled = true;
+      
+      const selectedEntry = selectedObj.userData.entry;
+      console.log(`Highlighting entries related to: ${selectedEntry.id}`);
+      
+      // Skip if no related entries
+      if (!selectedEntry.relatedEntries || selectedEntry.relatedEntries.length === 0) {
+        console.log('Entry has no related entries defined');
+        return;
+      }
+      
+      console.log(`Found ${selectedEntry.relatedEntries.length} related entries`);
+      
+      // Track connections that we've made to avoid duplicates
+      const connections = new Set();
+      
+      // Process each related entry
+      selectedEntry.relatedEntries.forEach(relatedId => {
+        try {
+          // Find the related orb object
+          const relatedOrb = this.orbObjects.get(relatedId);
+          
+          if (!relatedOrb) {
+            console.warn(`Related entry not found: ${relatedId}`);
+            return;
+          }
+          
+          // Ensure the orb is visible
+          relatedOrb.visible = true;
+          
+          // Mark as related for performance optimization
+          relatedOrb.userData.related = true;
+          relatedOrb.userData.optimizationDisabled = true;
+          
+          // Store original material if not already stored
+          if (!this.originalMaterials.has(relatedOrb.uuid)) {
+            this.originalMaterials.set(relatedOrb.uuid, relatedOrb.material.clone());
+          }
+          
+          // Create related entry effect (less intense than selection)
+          const relatedMaterial = relatedOrb.material.clone();
+          relatedMaterial.emissive = relatedOrb.material.color ? 
+            relatedOrb.material.color.clone() : 
+            new THREE.Color(0.7, 0.7, 1.0);
+          relatedMaterial.emissiveIntensity = 0.7;
+          
+          // Apply related entry material
+          relatedOrb.material = relatedMaterial;
+          
+          // Track this object for later cleanup
+          this.relatedEntryObjects.push(relatedOrb);
+          
+          // Create a connection line between selected and related orbs
+          const connectionKey = [selectedObj.uuid, relatedOrb.uuid].sort().join('-');
+          if (!connections.has(connectionKey)) {
+            const line = this.createConnectionLine(selectedObj, relatedOrb);
+            if (line) {
+              this.connectionLines.push(line);
+              connections.add(connectionKey);
+            }
+          }
+        } catch (error) {
+          console.error(`Error processing related entry ${relatedId}:`, error);
+        }
+      });
+    } catch (error) {
+      console.error('Error highlighting related entries:', error);
+      
+      // Clean up in case of error
+      this.cleanupRelatedEntries();
+    }
   }
   
   /**
-   * Create a line connecting the selected entry to a related entry
-   * @param {Object} sourceObj - The source (selected) Three.js object
-   * @param {Object} targetObj - The target (related) Three.js object
+   * Create a connection line between two objects
+   * @param {THREE.Object3D} sourceObj - Source object
+   * @param {THREE.Object3D} targetObj - Target object
+   * @returns {THREE.Line} The created line
    */
   createConnectionLine(sourceObj, targetObj) {
-    const material = new THREE.LineBasicMaterial({
-      color: 0x00ffff, // Cyan color for connections
-      transparent: true,
-      opacity: 0.6,
-      linewidth: 1
-    });
-    
-    // Create geometry for the line
-    const points = [
-      sourceObj.position.clone(),
-      targetObj.position.clone()
-    ];
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    
-    // Create the line
-    const line = new THREE.Line(geometry, material);
-    line.userData.isConnectionLine = true;
-    
-    // Add line to the scene and store for later cleanup
-    this.scene.add(line);
-    this.connectionLines.push(line);
+    try {
+      // Create line material
+      const lineMaterial = new THREE.LineBasicMaterial({ 
+        color: 0x00ffff, 
+        transparent: true, 
+        opacity: 0.6,
+        depthTest: true 
+      });
+      
+      // Create geometry for the line connecting the two points
+      const lineGeometry = new THREE.BufferGeometry();
+      const points = [
+        sourceObj.position.clone(),
+        targetObj.position.clone()
+      ];
+      lineGeometry.setFromPoints(points);
+      
+      // Create the line and add to scene
+      const line = new THREE.Line(lineGeometry, lineMaterial);
+      this.scene.add(line);
+      
+      return line;
+    } catch (error) {
+      console.error('Error creating connection line:', error);
+      return null;
+    }
   }
   
   /**
-   * Clean up any highlighted related entries and connection lines
+   * Clean up related entries highlighting
    */
   cleanupRelatedEntries() {
-    // Reset materials on related orbs
-    this.relatedEntryObjects.forEach(orb => {
-      this.resetObjectMaterial(orb);
-    });
-    this.relatedEntryObjects = [];
-    
-    // Remove connection lines
-    this.connectionLines.forEach(line => {
-      if (line && line.parent) {
-        line.parent.remove(line);
+    try {
+      // Reset material for all related objects
+      this.relatedEntryObjects.forEach(obj => {
+        if (!obj) return;
+        
+        // Reset to original material if available
+        if (this.originalMaterials.has(obj.uuid)) {
+          // Dispose of current material to prevent memory leaks
+          if (obj.material) obj.material.dispose();
+          
+          // Restore original material
+          obj.material = this.originalMaterials.get(obj.uuid).clone();
+          this.originalMaterials.delete(obj.uuid);
+        }
+        
+        // Remove performance flags
+        if (obj.userData) {
+          obj.userData.related = false;
+          obj.userData.selected = false;
+          obj.userData.optimizationDisabled = false;
+        }
+      });
+      
+      // Clear the tracking array
+      this.relatedEntryObjects = [];
+      
+      // Remove connection lines
+      this.connectionLines.forEach(line => {
+        if (!line) return;
+        
+        // Dispose of line resources
         if (line.geometry) line.geometry.dispose();
         if (line.material) line.material.dispose();
+        
+        // Remove from scene
+        this.scene.remove(line);
+      });
+      
+      // Clear the tracking array
+      this.connectionLines = [];
+      
+      // Resume performance optimizations if available
+      const performanceOptimizer = this.scene.userData?.performanceOptimizer;
+      if (performanceOptimizer) {
+        // Allow optimizations to resume
+        performanceOptimizer.resumeOptimizations();
       }
-    });
-    this.connectionLines = [];
+    } catch (error) {
+      console.error('Error cleaning up related entries:', error);
+    }
   }
   
   /**

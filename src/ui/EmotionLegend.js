@@ -32,6 +32,9 @@ export default class EmotionLegend {
     // Group for all legend elements
     this.legendGroup = null;
     
+    // Visibility flag
+    this.visible = true;
+    
     this.init();
   }
   
@@ -318,33 +321,37 @@ export default class EmotionLegend {
    * Update the legend position to follow the camera
    */
   updatePosition() {
-    if (!this.legendGroup) return;
+    if (!this.legendGroup || !this.visible) return;
     
-    // Get camera position and direction
-    const cameraPosition = new THREE.Vector3();
-    const cameraDirection = new THREE.Vector3();
-    this.camera.getWorldPosition(cameraPosition);
-    this.camera.getWorldDirection(cameraDirection);
-    
-    // Calculate right vector (perpendicular to camera direction)
-    const rightVector = new THREE.Vector3(1, 0, 0);
-    rightVector.applyQuaternion(this.camera.quaternion);
-    
-    // Calculate up vector
-    const upVector = new THREE.Vector3(0, 1, 0);
-    
-    // Calculate position for the legend
-    const position = new THREE.Vector3();
-    position.copy(cameraPosition);
-    position.addScaledVector(cameraDirection, this.options.position.distance);
-    position.addScaledVector(rightVector, -this.options.position.leftOffset);
-    position.addScaledVector(upVector, -this.options.position.downOffset);
-    
-    // Update legend position
-    this.legendGroup.position.copy(position);
-    
-    // Make the legend face the camera
-    this.legendGroup.lookAt(cameraPosition);
+    try {
+      // Get camera position and direction
+      const cameraPosition = new THREE.Vector3();
+      const cameraDirection = new THREE.Vector3();
+      this.camera.getWorldPosition(cameraPosition);
+      this.camera.getWorldDirection(cameraDirection);
+      
+      // Calculate right vector (perpendicular to camera direction)
+      const rightVector = new THREE.Vector3(1, 0, 0);
+      rightVector.applyQuaternion(this.camera.quaternion);
+      
+      // Calculate up vector
+      const upVector = new THREE.Vector3(0, 1, 0);
+      
+      // Calculate position for the legend
+      const position = new THREE.Vector3();
+      position.copy(cameraPosition);
+      position.addScaledVector(cameraDirection, this.options.position.distance);
+      position.addScaledVector(rightVector, -this.options.position.leftOffset);
+      position.addScaledVector(upVector, -this.options.position.downOffset);
+      
+      // Update legend position
+      this.legendGroup.position.copy(position);
+      
+      // Make the legend face the camera
+      this.legendGroup.lookAt(cameraPosition);
+    } catch (error) {
+      console.error('Error updating emotion legend position:', error);
+    }
   }
   
   /**
@@ -368,5 +375,47 @@ export default class EmotionLegend {
         this.legendGroup.parent.remove(this.legendGroup);
       }
     }
+  }
+
+  /**
+   * Show the emotion legend
+   */
+  show() {
+    if (!this.visible && this.legendGroup) {
+      try {
+        this.legendGroup.visible = true;
+        this.visible = true;
+        console.log('EmotionLegend: show');
+      } catch (error) {
+        console.error('Error showing emotion legend:', error);
+      }
+    }
+  }
+
+  /**
+   * Hide the emotion legend
+   */
+  hide() {
+    if (this.visible && this.legendGroup) {
+      try {
+        this.legendGroup.visible = false;
+        this.visible = false;
+        console.log('EmotionLegend: hide');
+      } catch (error) {
+        console.error('Error hiding emotion legend:', error);
+      }
+    }
+  }
+
+  /**
+   * Toggle emotion legend visibility
+   */
+  toggle() {
+    if (this.visible) {
+      this.hide();
+    } else {
+      this.show();
+    }
+    return this.visible;
   }
 } 

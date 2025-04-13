@@ -10,6 +10,11 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 
 **Phases 1, 2, and 3: Data Processing, Basic WebXR Environment, and Visualization Features are complete.** The processed journal data is available in `public/data/warhol_complete.json`, the basic WebXR environment is functional, and core visualization features (emotional coloring, interaction, entry display, related entry highlighting, audio) are implemented. The project is now ready for Phase 4: Refinement & Testing.
 
+**Phase 4.4: Bug Fixes and Refinements is complete.** Key improvements include:
+- Changed audio mute toggle from spacebar to 'I' key to prevent control conflicts
+- Fixed issue where orbs would freeze when selected in performance-optimized mode
+- Enhanced error handling and resource management
+
 ## Setup
 
 ### Prerequisites
@@ -102,3 +107,17 @@ npm run dev
 ## License
 
 This project is created as a class assignment and is not licensed for public use.
+
+## Controls
+
+### Keyboard Controls
+- **WASD/Arrow Keys**: Movement in viewing direction
+- **Mouse Drag**: Camera rotation
+- **Shift**: Move down
+- **Space**: Move up
+- **T**: Toggle audio controls panel
+- **M**: Toggle minimap
+- **E**: Toggle emotion legend
+- **P**: Toggle performance optimizations
+- **F**: Toggle performance monitor
+- **I**: Toggle audio mute/unmute
