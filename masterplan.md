@@ -291,9 +291,10 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Added material simplification for distant objects
 - Created PerformanceMonitor to visualize performance metrics
 - Added keyboard toggles:
+  - 'E' Key to toggle emotion wheel
   - 'P' key to toggle performance optimizations
   - 'F' key to toggle performance monitor display
-  - 'I' key to toggle audio mute (changed from spacebar)
+  - 'I' key to toggle audio mute
 - Implemented smart geometry caching to reduce memory usage
 - Only update culling calculations every N frames to reduce CPU usage
 - Added resource disposal functions to free memory when objects are no longer needed

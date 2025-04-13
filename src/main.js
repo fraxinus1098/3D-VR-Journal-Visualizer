@@ -125,7 +125,13 @@ class WarholJournalViz {
         }
         this.interactionManager.handleHover(object);
       },
-      getInteractiveObjects: () => this.getInteractiveObjects()
+      getInteractiveObjects: () => this.getInteractiveObjects(),
+      
+      // Pass UIManager toggle functions for VR controller buttons
+      onAButtonPressed: () => this.uiManager.toggleEmotionLegend(),       // Right A -> Emotion Legend
+      onBButtonPressed: () => this.uiManager.togglePerformanceOptimizer(), // Right B -> Performance Optimizer
+      onXButtonPressed: () => this.uiManager.togglePerformanceMonitor(),  // Left X -> Performance Monitor
+      onYButtonPressed: () => this.uiManager.toggleAudioMute()            // Left Y -> Audio Mute
     });
     
     // Set up desktop controls

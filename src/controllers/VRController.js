@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
 
+// Standard Gamepad Mapping Buttons (indices)
+const TRIGGER_BUTTON = 0;
+const SQUEEZE_BUTTON = 1; // Grip
+const THUMBSTICK_BUTTON = 3;
+const X_BUTTON = 4; // Left Controller 'X'
+const Y_BUTTON = 5; // Left Controller 'Y'
+const A_BUTTON = 4; // Right Controller 'A' (Same index as X on Left)
+const B_BUTTON = 5; // Right Controller 'B' (Same index as Y on Left)
+
 /**
  * Manages VR controllers and interactions
  */
@@ -20,10 +29,20 @@ export default class VRController {
     this.leftGamepad = null;
     this.rightGamepad = null;
     
+    // Button state tracking to prevent multiple triggers per press
+    this.leftButtonStates = {};
+    this.rightButtonStates = {};
+    
     // Selection and interaction callbacks
     this.onSelect = options.onSelect || null;
     this.onRayIntersection = options.onRayIntersection || null;
     this.getInteractiveObjects = options.getInteractiveObjects || (() => []);
+    
+    // Callbacks for new button presses
+    this.onAButtonPressed = options.onAButtonPressed || null; // Right 'A'
+    this.onBButtonPressed = options.onBButtonPressed || null; // Right 'B'
+    this.onXButtonPressed = options.onXButtonPressed || null; // Left 'X'
+    this.onYButtonPressed = options.onYButtonPressed || null; // Left 'Y'
     
     this.setupControllers();
   }
@@ -77,13 +96,7 @@ export default class VRController {
     this.controller0.add(line.clone());
     this.controller1.add(line.clone());
     
-    // Add event listeners for thumbstick movement
-    this.controller0.addEventListener('squeezestart', this.onSqueezeStart.bind(this));
-    this.controller0.addEventListener('squeezeend', this.onSqueezeEnd.bind(this));
-    this.controller1.addEventListener('squeezestart', this.onSqueezeStart.bind(this));
-    this.controller1.addEventListener('squeezeend', this.onSqueezeEnd.bind(this));
-    
-    // Listen for thumbstick movement
+    // Listen for input sources change to get gamepad references
     this.renderer.xr.addEventListener('inputsourceschange', this.onInputSourcesChange.bind(this));
   }
   
@@ -96,8 +109,10 @@ export default class VRController {
         // Store reference to the gamepad for thumbstick movement
         if (inputSource.handedness === 'left') {
           this.leftGamepad = inputSource.gamepad;
+          this.resetButtonStates(this.leftButtonStates, this.leftGamepad.buttons.length);
         } else if (inputSource.handedness === 'right') {
           this.rightGamepad = inputSource.gamepad;
+          this.resetButtonStates(this.rightButtonStates, this.rightGamepad.buttons.length);
         }
       }
     });
@@ -121,16 +136,6 @@ export default class VRController {
     if (interactive && this.onSelect) {
       this.onSelect(interactive.object);
     }
-  }
-  
-  onSqueezeStart(event) {
-    const controller = event.target;
-    controller.userData.isSqueezing = true;
-  }
-  
-  onSqueezeEnd(event) {
-    const controller = event.target;
-    controller.userData.isSqueezing = false;
   }
   
   handleRayIntersection(controller) {
@@ -184,40 +189,88 @@ export default class VRController {
     }
   }
   
+  // Helper to initialize button states
+  resetButtonStates(buttonStates, numButtons) {
+    for (let i = 0; i < numButtons; i++) {
+      buttonStates[i] = { pressed: false, justPressed: false };
+    }
+  }
+  
+  // Helper function to check for button press (rising edge)
+  checkButtonPress(buttonStates, buttonIndex, gamepad) {
+    if (!gamepad || buttonIndex >= gamepad.buttons.length) {
+      return false;
+    }
+
+    const button = gamepad.buttons[buttonIndex];
+    const state = buttonStates[buttonIndex];
+
+    if (button.pressed && !state.pressed) {
+      state.pressed = true;
+      state.justPressed = true; // Mark as just pressed
+      return true; // Rising edge detected
+    }
+
+    if (!button.pressed && state.pressed) {
+      state.pressed = false;
+      state.justPressed = false; // Reset just pressed flag
+    } else if (state.justPressed) {
+      // Ensure justPressed is reset on the next frame even if held
+      state.justPressed = false;
+    }
+
+    return false; // Not a rising edge press
+  }
+  
   processControllerInput() {
-    // Process thumbstick input for movement
+    // Process Left Controller Input
     if (this.leftGamepad) {
+      // Thumbstick Movement
       const axes = this.leftGamepad.axes;
       if (axes.length >= 2) {
-        // Get horizontal and vertical thumbstick values (-1 to 1)
-        const horizontal = axes[0];
-        const vertical = axes[1];
-        
-        // Only process if thumbstick is being moved significantly
-        if (Math.abs(horizontal) > 0.2 || Math.abs(vertical) > 0.2) {
-          // Get camera direction and orientation for movement
+        const horizontal = axes[2] || axes[0]; // Standard thumbstick axes are 2 and 3
+        const vertical = axes[3] || axes[1];   // Fallback to 0 and 1 if needed
+        const deadZone = 0.1; // Increased deadzone
+
+        if (Math.abs(horizontal) > deadZone || Math.abs(vertical) > deadZone) {
           const cameraDirection = new THREE.Vector3(0, 0, -1);
-          cameraDirection.applyQuaternion(this.camera.quaternion);
-          cameraDirection.y = 0; // Keep movement horizontal
+          this.camera.getWorldDirection(cameraDirection); // Use world direction
+          cameraDirection.y = 0;
           cameraDirection.normalize();
-          
-          // Get right vector relative to camera
-          const rightVector = new THREE.Vector3(1, 0, 0);
-          rightVector.applyQuaternion(this.camera.quaternion);
-          rightVector.y = 0;
-          rightVector.normalize();
-          
-          // Calculate movement vector based on thumbstick input
+
+          const rightVector = new THREE.Vector3();
+          rightVector.crossVectors(this.camera.up, cameraDirection).normalize(); // Correct right vector calculation
+
           this.movementVector.set(0, 0, 0);
-          this.movementVector.add(cameraDirection.multiplyScalar(-vertical)); // Forward/backward
-          this.movementVector.add(rightVector.multiplyScalar(horizontal));    // Left/right
-          this.movementVector.normalize().multiplyScalar(this.movementSpeed);
-          
-          // Apply movement to camera position
+          // Vertical axis is often inverted (-1 is forward)
+          this.movementVector.add(cameraDirection.multiplyScalar(-vertical * this.movementSpeed));
+          this.movementVector.add(rightVector.multiplyScalar(horizontal * this.movementSpeed));
+
           if (this.movementEnabled) {
-            this.camera.position.add(this.movementVector);
+            // Apply movement relative to the camera RIG (parent of camera) if available, else camera directly
+            const target = this.camera.parent || this.camera;
+            target.position.add(this.movementVector);
           }
         }
+      }
+
+      // Button Presses (Left Hand)
+      if (this.onXButtonPressed && this.checkButtonPress(this.leftButtonStates, X_BUTTON, this.leftGamepad)) {
+        this.onXButtonPressed();
+      }
+      if (this.onYButtonPressed && this.checkButtonPress(this.leftButtonStates, Y_BUTTON, this.leftGamepad)) {
+        this.onYButtonPressed();
+      }
+    }
+
+    // Process Right Controller Input
+    if (this.rightGamepad) {
+      // Button Presses (Right Hand)
+      if (this.onAButtonPressed && this.checkButtonPress(this.rightButtonStates, A_BUTTON, this.rightGamepad)) {
+        this.onAButtonPressed();
+      }
+      if (this.onBButtonPressed && this.checkButtonPress(this.rightButtonStates, B_BUTTON, this.rightGamepad)) {
+        this.onBButtonPressed();
       }
     }
   }
