@@ -47,6 +47,8 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 6. Merge all processed batches into single comprehensive JSON file
 7. Create clustering via UMAP dimensionality reduction on the complete dataset
 8. Output final structured JSON for visualization
+9. Create size-optimized version by removing embeddings from final JSON
+   - Maintains all visual and interaction data while reducing file size
 
 ### Data Output Structure
 ```json
@@ -333,6 +335,7 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - [x] Fix audio control issues
 - [x] Resolve performance optimization bugs
 - [x] General stability improvements
+- [x] Create size-optimized JSON by removing embeddings
 
 **Key Points:**
 - Changed audio mute toggle from spacebar to 'I' key to avoid conflicts with other controls
@@ -341,3 +344,5 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Enhanced performance optimizer to temporarily disable optimizations during selection interaction
 - Added better error handling and recovery in selection workflow
 - Implemented proper resource cleanup to prevent memory leaks
+- Created optimize_json.py script to remove embeddings from final JSON, significantly reducing file size
+- Embeddings not needed for visualization since UMAP coordinates are precomputed

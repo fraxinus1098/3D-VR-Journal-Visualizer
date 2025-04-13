@@ -14,6 +14,7 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Changed audio mute toggle from spacebar to 'I' key to prevent control conflicts
 - Fixed issue where orbs would freeze when selected in performance-optimized mode
 - Enhanced error handling and resource management
+- Added JSON optimization to reduce file size by removing embeddings
 
 ## Setup
 
@@ -50,6 +51,7 @@ npm run dev
 ├── public/                     # Static files served directly
 │   ├── data/
 │   │   ├── warhol_final.json   # Final processed data for visualization (large file)
+│   │   ├── warhol_final_optimized.json # Size-optimized data without embeddings
 │   │   ├── sample.json         # Smaller sample data for testing
 │   │   └── .gitattributes      # Git LFS configuration for large data file
 │   └── sounds/                 # Background audio loops for emotions
@@ -77,6 +79,7 @@ npm run dev
 │   ├── parse_entries.py        # Parses text into structured journal entries
 │   ├── process_warhol_entries.py # Analyzes entries with OpenAI (emotions, topics, etc.)
 │   ├── final_processing.py     # Generates embeddings, UMAP coordinates, relationships
+│   ├── optimize_json.py        # Removes embeddings to create size-optimized JSON
 │   ├── visualize_embeddings.py # Utility script for visualizing embeddings (optional)
 │   ├── ... (other utility scripts)
 │   ├── requirements.txt        # Python dependencies
@@ -84,7 +87,8 @@ npm run dev
 ├── output/                     # Intermediate and final outputs from data processing
 │   ├── parsed_entries.json     # Initial parsed entries before full NLP
 │   ├── warhol_all_processed.json # Intermediate file with all NLP results/embeddings
-│   └── warhol_final.json       # Final data ready for visualization (copied to public/data)
+│   ├── warhol_final.json       # Final data ready for visualization (copied to public/data)
+│   └── warhol_final_optimized.json # Optimized data with embeddings removed
 ├── index.html                  # HTML entry point for the web app
 ├── vite.config.js              # Vite build configuration
 ├── package.json                # Node.js project dependencies and scripts
