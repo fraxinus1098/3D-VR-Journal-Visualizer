@@ -119,63 +119,49 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 ## 8. Implementation Plan
 
 ### Phase 1: Data Processing (Estimated time: 2-3 hours)
+**Status:** Complete
 
 #### Phase 1.1: Environment Setup and PDF Extraction
 **Tasks:**
-- Set up Python development environment
-- Create project structure
-- Implement PDF text extraction with pdfplumber
-
-**Key Points:**
-- Extract full text from "The Andy Warhol Diaries" PDF
+- [x] Set up Python development environment
+- [x] Create project structure
+- [x] Implement PDF text extraction with pdfplumber
 
 #### Phase 1.2: Entry Parsing and Structure
 **Tasks:**
-- Develop regex pattern to identify journal entries
-- Parse text into structured entries
-- Create basic data structure for entries
-
-**Key Points:**
-- Focus on pattern matching for "Day, Month DD, YYYY" format
-- Extract location information when available
-- Store entries in a structured format (e.g., list of dictionaries)
+- [x] Develop regex pattern to identify journal entries
+- [x] Parse text into structured entries
+- [x] Create basic data structure for entries
 
 #### Phase 1.3: OpenAI Integration for Analysis
 **Tasks:**
-- Set up OpenAI API credentials
-- Group entries by year for batch processing
-- Implement sentiment analysis, topic extraction, and entity recognition with GPT-4o mini in batches
-- Generate embeddings with text-embedding-3-large in batches
-- Save interim results by batch and year
-
-**Key Points:**
-- Process entries in batches of per each year to stay within API token limits
-- Group by year for logical processing units and checkpointing
-- Extract Plutchik's 8 emotions with 0.0-1.0 scale
-- Extract topics and entities (people, places) in the same API call
-- Implement proper error handling and retry logic for API calls
-- Save interim results regularly to prevent data loss
-- Maintain original 3,072 dimension embeddings for UMAP processing
+- [x] Set up OpenAI API credentials
+- [x] Group entries by year for batch processing
+- [x] Implement sentiment analysis, topic extraction, and entity recognition with GPT-4o mini in batches
+- [x] Generate embeddings with text-embedding-3-large in batches
+- [x] Save interim results by batch and year
 
 #### Phase 1.4: Dimensionality Reduction and Final Data
 **Tasks:**
-- Apply UMAP for 3D coordinate generation
-- Generate related entries based on embedding similarity
-- Structure and save final JSON output
+- [x] Apply UMAP for 3D coordinate generation
+- [x] Generate related entries based on embedding similarity
+- [x] Structure and save final JSON output
 
 **Key Points:**
 - Use 3 components in UMAP for 3D visualization
 - Calculate entry relationships based on cosine similarity
 - Scale coordinates appropriately for Three.js visualization
 - Create comprehensive JSON structure with all required fields
+- Final data file: `public/data/warhol_complete.json`
 
 ### Phase 2: Basic WebXR Environment (Estimated time: 2-3 hours)
+**Status:** Complete
 
 #### Phase 2.1: Project Setup and Three.js Initialization
 **Tasks:**
-- Set up Vite project
-- Install Three.js dependencies
-- Create basic project structure
+- [x] Set up Vite project
+- [x] Install Three.js dependencies
+- [x] Create basic project structure
 
 **Key Points:**
 - Use Vite for fast development experience
@@ -184,9 +170,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 2.2: Basic Scene and Camera Configuration
 **Tasks:**
-- Create Three.js scene
-- Set up camera and renderer
-- Add basic lighting for the environment
+- [x] Create Three.js scene
+- [x] Set up camera and renderer
+- [x] Add basic lighting for the environment
 
 **Key Points:**
 - Use dark space-like background
@@ -196,11 +182,11 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 2.3: WebXR and Controller Setup
 **Tasks:**
-- Enable WebXR in Three.js
-- Add VR button for immersive experience
-- Set up controller models and interactions
-- Implement continuous movement controls
-- Implement desktop controls for non-VR testing
+- [x] Enable WebXR in Three.js
+- [x] Add VR button for immersive experience
+- [x] Set up controller models and interactions
+- [x] Implement continuous movement controls
+- [x] Implement desktop controls for non-VR testing
 
 **Key Points:**
 - Import WebXR components from Three.js examples
@@ -215,9 +201,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 2.4: Data Loading and Basic Visualization
 **Tasks:**
-- Create data loading utility
-- Generate basic orbs for journal entries
-- Position orbs according to UMAP coordinates
+- [x] Create data loading utility
+- [x] Generate basic orbs for journal entries
+- [x] Position orbs according to UMAP coordinates
 
 **Key Points:**
 - Load JSON data asynchronously
@@ -226,12 +212,13 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Store entry data with each orb for later interaction
 
 ### Phase 3: Visualization Features (Estimated time: 2-3 hours)
+**Status:** Complete
 
 #### Phase 3.1: Emotion Color Mapping and Orb Styling
 **Tasks:**
-- Create color mapping for Plutchik's emotions
-- Update orb materials with emotion colors
-- Add visual effects based on emotion intensity
+- [x] Create color mapping for Plutchik's emotions
+- [x] Update orb materials with emotion colors
+- [x] Add visual effects based on emotion intensity
 
 **Key Points:**
 - Assign distinctive colors to each emotion
@@ -241,9 +228,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 3.2: Selection and Interaction System
 **Tasks:**
-- Implement raycaster for selecting orbs
-- Create interaction events
-- Add visual feedback for selection
+- [x] Implement raycaster for selecting orbs
+- [x] Create interaction events
+- [x] Add visual feedback for selection
 
 **Key Points:**
 - Set up controller-based raycasting
@@ -253,9 +240,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 3.3: Entry Panel Display
 **Tasks:**
-- Create floating panel for entry display
-- Add text rendering system
-- Implement panel positioning and controls
+- [x] Create floating panel for entry display
+- [x] Add text rendering system
+- [x] Implement panel positioning and controls
 
 **Key Points:**
 - Position panel at comfortable reading distance
@@ -266,9 +253,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 3.4: Related Entries Highlighting
 **Tasks:**
-- Implement highlighting of related entries
-- Create visual connections between entries
-- Add toggle functionality
+- [x] Implement highlighting of related entries
+- [x] Create visual connections between entries
+- [x] Add toggle functionality
 
 **Key Points:**
 - Highlight related orbs when an entry is selected
@@ -278,9 +265,9 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 
 #### Phase 3.5: Audio System Implementation
 **Tasks:**
-- Create audio system with ambient sounds
-- Implement proximity-based audio blending
-- Add interaction sounds for feedback
+- [x] Create audio system with ambient sounds
+- [x] Implement proximity-based audio blending
+- [x] Add interaction sounds for feedback
 
 **Key Points:**
 - Use Web Audio API for spatial audio
@@ -327,288 +314,3 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Deploy to GitHub Pages
 - Test thoroughly on Quest 3 device
 - Document the testing process
-
-## 9. Technical Implementation Details
-
-### Data Processing
-```python
-# Key components for Python processing script
-
-# 1. PDF text extraction
-import pdfplumber
-
-def extract_text_from_pdf(pdf_path):
-    text = ""
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            text += page.extract_text() + "\n"
-    return text
-
-# 2. Entry parsing
-import re
-
-def parse_entries(text):
-    # Pattern for entry headers: Day, Month DD, YYYY
-    pattern = r'(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), (January|February|March|April|May|June|July|August|September|October|November|December) (\d{1,2}), (\d{4})'
-    
-    # Split by pattern
-    entries = []
-    # Implementation details...
-    
-    return entries
-
-# 3. OpenAI API integration with batch processing
-import openai
-import time
-from tqdm import tqdm
-
-def analyze_entries_batch(entries_batch):
-    # Prepare batch of entries for analysis
-    entries_text = "\n\n".join([f"[{entry['id']}]: {entry['text']}" for entry in entries_batch])
-    
-    comprehensive_prompt = f"""
-    Analyze the following journal entries from Andy Warhol and provide:
-    
-    1. Emotion rating: Rate the intensity of each emotion on a scale of 0.0 to 1.0:
-       - Anger
-       - Anticipation
-       - Joy
-       - Trust
-       - Fear
-       - Surprise
-       - Sadness
-       - Disgust
-    
-    2. Topics: Identify 1-5 main topics discussed in each entry (e.g., art, business, celebrities, etc.)
-    
-    3. Entities: Extract named entities in these categories:
-       - People: Names of individuals mentioned
-       - Places: Locations mentioned
-    
-    Return a JSON array where each object contains:
-    - "id" field matching the entry ID
-    - "emotions" object with the emotions as keys and intensities as values
-    - "topics" array with topic strings
-    - "entities" object with "people" and "places" arrays
-    
-    Entries:
-    {entries_text}
-    """
-    
-    try:
-        response = openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You analyze text and return structured JSON."},
-                {"role": "user", "content": comprehensive_prompt}
-            ]
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        print(f"Error in API call: {e}")
-        time.sleep(20)  # Simple backoff
-        return None
-
-def get_embeddings_batch(texts):
-    # Process embeddings in batches
-    try:
-        response = openai.embeddings.create(
-            model="text-embedding-3-large",
-            input=texts
-        )
-        return [item.embedding for item in response.data]
-    except Exception as e:
-        print(f"Error in embeddings API call: {e}")
-        time.sleep(20)  # Simple backoff
-        return None
-
-# Process entries by year
-entries_by_year = {}  # Group entries by year
-for entry in entries:
-    year = entry['date'].split('-')[0]
-    if year not in entries_by_year:
-        entries_by_year[year] = []
-    entries_by_year[year].append(entry)
-
-# Process each year's entries
-all_processed_entries = []
-for year, year_entries in entries_by_year.items():
-    print(f"Processing {len(year_entries)} entries from {year}...")
-    
-    # Process in smaller batches
-    batch_size = 30  # Adjust based on average entry length
-    for i in range(0, len(year_entries), batch_size):
-        current_batch = year_entries[i:i+batch_size]
-        
-        # 1. Get comprehensive analysis (emotions, topics, entities)
-        analysis_results = analyze_entries_batch(current_batch)
-        if not analysis_results:
-            continue
-            
-        # 2. Get embeddings (smaller batches for embeddings if needed)
-        embedding_texts = [entry["text"] for entry in current_batch]
-        embedding_batch_size = 10
-        all_embeddings = []
-        
-        for j in range(0, len(embedding_texts), embedding_batch_size):
-            batch_texts = embedding_texts[j:j+embedding_batch_size]
-            batch_embeddings = get_embeddings_batch(batch_texts)
-            if batch_embeddings:
-                all_embeddings.extend(batch_embeddings)
-        
-        # 3. Combine results
-        for idx, entry in enumerate(current_batch):
-            if idx < len(analysis_results) and idx < len(all_embeddings):
-                entry_analysis = next((e for e in analysis_results if e["id"] == entry["id"]), None)
-                if entry_analysis:
-                    processed_entry = entry.copy()
-                    processed_entry["emotions"] = entry_analysis["emotions"]
-                    processed_entry["topics"] = entry_analysis["topics"]
-                    processed_entry["entities"] = entry_analysis["entities"]
-                    processed_entry["embedding"] = all_embeddings[idx]
-                    all_processed_entries.append(processed_entry)
-        
-        # Save interim results for this batch
-        with open(f'warhol_{year}_batch_{i}.json', 'w') as f:
-            json.dump(all_processed_entries, f)
-            
-    # Save year results
-    with open(f'warhol_{year}_processed.json', 'w') as f:
-        json.dump(all_processed_entries, f)
-
-# Final merge into one file
-with open('warhol_complete.json', 'w') as f:
-    json.dump({"entries": all_processed_entries}, f)
-
-# 4. Dimensionality reduction
-from umap import UMAP
-
-def generate_coordinates(embeddings):
-    umap_3d = UMAP(n_components=3, random_state=42)
-    coordinates = umap_3d.fit_transform(embeddings)
-    return coordinates
-```
-
-### WebXR Implementation
-```javascript
-// Key components for Three.js implementation
-
-// 1. Basic setup
-import * as THREE from 'three';
-import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
-import { XRControllerModelFactory } from 'three/examples/jsm/webxr/XRControllerModelFactory.js';
-
-function initScene() {
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000011);
-  
-  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.6, 3);
-  
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.xr.enabled = true;
-  
-  document.body.appendChild(renderer.domElement);
-  document.body.appendChild(VRButton.createButton(renderer));
-  
-  // Controller setup, navigation, etc.
-}
-
-// 2. Data visualization
-function createVisualization(data) {
-  // Create orbs for each entry
-  data.entries.forEach(entry => {
-    const orb = createOrb(entry);
-    scene.add(orb);
-  });
-}
-
-function createOrb(entry) {
-  // Create sphere with emotion-based color
-  const emotionColor = getEmotionColor(entry.emotions);
-  const geometry = new THREE.SphereGeometry(0.1, 32, 32);
-  const material = new THREE.MeshStandardMaterial({ 
-    color: emotionColor,
-    emissive: emotionColor,
-    emissiveIntensity: 0.5
-  });
-  
-  const orb = new THREE.Mesh(geometry, material);
-  orb.position.set(entry.coordinates.x, entry.coordinates.y, entry.coordinates.z);
-  
-  // Add interaction capabilities
-  orb.userData.entry = entry;
-  orb.userData.interactive = true;
-  
-  return orb;
-}
-
-// 3. Entry display panel
-function createEntryPanel(entry) {
-  // Create floating panel with entry text
-  const panel = new THREE.Group();
-  
-  // Background panel
-  const panelGeometry = new THREE.PlaneGeometry(1, 0.8);
-  const panelMaterial = new THREE.MeshBasicMaterial({ 
-    color: 0x111111,
-    transparent: true,
-    opacity: 0.8
-  });
-  const panelMesh = new THREE.Mesh(panelGeometry, panelMaterial);
-  panel.add(panelMesh);
-  
-  // Text implementation (using HTML and CSS in a WebGLRenderer)
-  // Alternative: three-mesh-ui or troika-three-text
-  
-  return panel;
-}
-
-// 4. Audio implementation
-function setupAudio() {
-  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  const emotionSounds = {};
-  
-  // Load emotion sound loops
-  const emotions = ['anger', 'anticipation', 'joy', 'trust', 'fear', 'surprise', 'sadness', 'disgust'];
-  emotions.forEach(emotion => {
-    loadSound(emotion);
-  });
-  
-  function loadSound(emotion) {
-    const request = new XMLHttpRequest();
-    request.open('GET', `sounds/${emotion}.mp3`, true);
-    request.responseType = 'arraybuffer';
-    
-    request.onload = function() {
-      audioContext.decodeAudioData(request.response, function(buffer) {
-        emotionSounds[emotion] = {
-          buffer: buffer,
-          source: null,
-          gain: audioContext.createGain()
-        };
-        emotionSounds[emotion].gain.connect(audioContext.destination);
-      });
-    };
-    request.send();
-  }
-  
-  function updateAudio(position) {
-    // Calculate distances to emotion clusters
-    // Update gain nodes for crossfading
-  }
-  
-  return {
-    updateAudio,
-    playInteractionSound: () => { /* Implementation */ }
-  };
-}
-```
-
-## 10. Performance Considerations
-- Limit concurrent audio sources to preserve performance
-- Implement level-of-detail for distant orbs
-- Optimize raycasting for interaction
-- Implement frustum culling for distant objects
