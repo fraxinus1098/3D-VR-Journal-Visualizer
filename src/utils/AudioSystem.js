@@ -7,6 +7,12 @@ import * as THREE from 'three';
  * - Loads and plays emotion-based ambient tracks
  * - Implements spatial audio and proximity-based mixing
  * - Adds interaction sounds for feedback
+ * 
+ * TODO: REFACTORING PLANNED
+ * This file will be extensively modified in Phase 5 to replace the Web Audio API approach
+ * with SuperCollider integration via OSC. Most of the current implementation will be
+ * replaced with OSC message handling to dynamically generate audio based on journal
+ * entry emotion values instead of using pre-recorded audio files.
  */
 class AudioSystem {
   constructor() {

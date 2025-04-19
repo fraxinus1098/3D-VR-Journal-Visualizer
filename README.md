@@ -16,6 +16,12 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Enhanced error handling and resource management
 - Added JSON optimization to reduce file size by removing embeddings
 
+**Phase 5: SuperCollider Audio Implementation (in progress).** We're currently replacing the Web Audio API-based system with a more sophisticated SuperCollider implementation:
+- Will generate dynamic, algorithmic compositions based on journal entry emotion values
+- Each emotion will have its own unique instrument with parameterized tempo and timbre
+- Entry selection will send emotion data to SuperCollider via OSC for real-time audio synthesis
+- Requires running SuperCollider locally alongside the web application
+
 ## Setup
 
 ### Prerequisites
@@ -23,6 +29,7 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Node.js (v14+)
 - npm (v6+)
 - A WebXR-compatible device (like Oculus Quest 3) or browser for testing
+- SuperCollider (v3.13+) - required for Phase 5 audio features
 
 ### Installation
 
@@ -44,6 +51,11 @@ npm run dev
    - Navigate to the development server URL on the Quest browser
    - Click the VR button to enter immersive mode
 
+5. For SuperCollider audio (once implemented):
+   - Start the SuperCollider application
+   - Load and run the `warholEmotions.scd` file
+   - Start the web application, which will communicate with SuperCollider
+
 ## Project Structure
 
 ```
@@ -54,7 +66,7 @@ npm run dev
 │   │   ├── warhol_final_optimized.json # Size-optimized data without embeddings
 │   │   ├── sample.json         # Smaller sample data for testing
 │   │   └── .gitattributes      # Git LFS configuration for large data file
-│   └── sounds/                 # Background audio loops for emotions
+│   └── sounds/                 # Background audio loops for emotions (to be replaced by SuperCollider)
 │       ├── 1 - Joy.mp3
 │       ├── ... (8 files total)
 │       └── 8 - Anticipation.mp3
@@ -68,12 +80,15 @@ npm run dev
 │   │   ├── Minimap.js          # Renders a 2D minimap of the 3D space
 │   │   └── Notifications.js    # Handles displaying in-app messages
 │   ├── utils/
-│   │   ├── AudioSystem.js      # Manages loading and playing spatial audio
+│   │   ├── AudioSystem.js      # Manages audio (being updated for SuperCollider)
+│   │   ├── OscBridge.js        # OSC communication with SuperCollider (planned)
 │   │   ├── InteractionManager.js # Handles raycasting and object selection
 │   │   └── data-loader.js      # Loads the main journal data
 │   ├── visualizers/
 │   │   └── OrbVisualizer.js    # Creates and manages the 3D orbs representing entries
 │   └── main.js                 # Main application entry point, initializes Three.js/WebXR
+├── supercollider/              # SuperCollider files for audio generation
+│   └── warholEmotions.scd      # SuperCollider definitions for emotional instruments (planned)
 ├── data_processing/            # Python scripts for data extraction & NLP (Runs locally)
 │   ├── extract_text.py         # Extracts text from PDF
 │   ├── parse_entries.py        # Parses text into structured journal entries
@@ -101,7 +116,8 @@ npm run dev
 
 - Three.js and WebXR for 3D visualization
 - Vite for fast development
-- Web Audio API for spatial audio
+- SuperCollider for algorithmic audio composition
+- osc.js for Open Sound Control communication
 - **Data Processing:**
   - Python
   - pdfplumber
