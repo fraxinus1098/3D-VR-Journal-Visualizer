@@ -1,189 +1,246 @@
 /*
-Warhol Emotions - Test Values
-=============================
+Test Values for Warhol Emotions
+===============================
 
-This script provides a simple way to test different emotion combinations
-without needing to run the full web application.
+This file provides various test functions for auditioning the emotion-based
+instruments in the warholEmotions.scd file without needing to run the web application.
 
-Make sure to run warholEmotions.scd first!
+Usage:
+1. First execute the warholEmotions.scd file to load all SynthDefs and patterns
+2. Then execute this entire file to load the test functions
+3. Finally, call any of the test functions from the post window
+
 */
 
-// Helper functions to send test values
-~testValues = {|joy=0.5, trust=0.6, fear=0.2, surprise=0.3, sadness=0.4, disgust=0.3, anger=0.2, anticipation=0.5|
-	NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", joy, trust, fear, surprise, sadness, disgust, anger, anticipation);
-};
-
-// Function to play a single emotion for testing
-~playOneEmotion = {|emotion, value=0.8|
-	var values = Array.fill(8, 0);
+(
+// Test a single emotion with specified intensity
+~testEmotion = {|emotion, intensity=0.7|
+	var values = Array.fill(8, 0.0);
+	var emotions = ["joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"];
 	var index;
 	
-	// Map emotion name to index
-	index = [
-		\joy, \trust, \fear, \surprise, 
-		\sadness, \disgust, \anger, \anticipation
-	].indexOf(emotion);
+	// Handle both symbols and strings
+	if(emotion.isKindOf(Symbol)) {
+		emotion = emotion.asString;
+	};
 	
-	if(index.isNil, {
-		"Invalid emotion name. Use: joy, trust, fear, surprise, sadness, disgust, anger, anticipation".postln;
-	}, {
-		values[index] = value;
-		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *values);
-		("Playing " ++ emotion ++ " with intensity " ++ value).postln;
+	// Find the index in a case-insensitive way
+	index = emotions.detectIndex({|name| 
+		name.asString.toLower == emotion.asString.toLower
 	});
+	
+	if(index.notNil) {
+		values[index] = intensity;
+		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *values);
+		("Testing " ++ emotion ++ " with intensity " ++ intensity).postln;
+	} {
+		"Unknown emotion. Use one of: joy, trust, fear, surprise, sadness, disgust, anger, anticipation".postln;
+	};
 };
 
-// Test sequences
-~testSequences = (
-	// Pure emotions - test each one individually
-	allJoy: { ~testValues.value(1, 0, 0, 0, 0, 0, 0, 0) },
-	allTrust: { ~testValues.value(0, 1, 0, 0, 0, 0, 0, 0) },
-	allFear: { ~testValues.value(0, 0, 1, 0, 0, 0, 0, 0) },
-	allSurprise: { ~testValues.value(0, 0, 0, 1, 0, 0, 0, 0) },
-	allSadness: { ~testValues.value(0, 0, 0, 0, 1, 0, 0, 0) },
-	allDisgust: { ~testValues.value(0, 0, 0, 0, 0, 1, 0, 0) },
-	allAnger: { ~testValues.value(0, 0, 0, 0, 0, 0, 1, 0) },
-	allAnticipation: { ~testValues.value(0, 0, 0, 0, 0, 0, 0, 1) },
+// Test a specific emotion in isolation with varying intensities
+~emotionIntensitySweep = {|emotion, steps=5, duration=2|
+	var values;
+	var emotions = ["joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"];
+	var index;
 	
-	// Common combinations
-	happy: { ~testValues.value(0.8, 0.6, 0, 0.2, 0, 0, 0, 0.3) },
-	sad: { ~testValues.value(0, 0.1, 0.3, 0, 0.9, 0.2, 0, 0) },
-	anxious: { ~testValues.value(0, 0, 0.7, 0.3, 0.2, 0, 0, 0.8) },
-	angry: { ~testValues.value(0, 0, 0.3, 0, 0.2, 0.6, 0.9, 0.1) },
-	balanced: { ~testValues.value(0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5) },
-	mixed: { ~testValues.value(0.3, 0.7, 0.2, 0.5, 0.8, 0.1, 0.4, 0.6) }
-);
-
-// Function to test ramping up an emotion from 0 to 1
-~rampEmotion = {|emotion, duration=5|
-	var values = Array.fill(8, 0);
-	var index, steps=20;
+	// Handle both symbols and strings
+	if(emotion.isKindOf(Symbol)) {
+		emotion = emotion.asString;
+	};
 	
-	// Map emotion name to index
-	index = [
-		\joy, \trust, \fear, \surprise, 
-		\sadness, \disgust, \anger, \anticipation
-	].indexOf(emotion);
+	// Find the index in a case-insensitive way
+	index = emotions.detectIndex({|name| 
+		name.asString.toLower == emotion.asString.toLower
+	});
 	
-	if(index.isNil, {
-		"Invalid emotion name. Use: joy, trust, fear, surprise, sadness, disgust, anger, anticipation".postln;
-	}, {
-		("Ramping " ++ emotion ++ " from 0 to 1 over " ++ duration ++ " seconds").postln;
+	if(index.notNil) {
+		("Testing " ++ emotion ++ " with intensity sweep...").postln;
 		
-		// Create a routine to gradually increase the value
+		// Loop through intensities from 0.2 to 1.0
 		Routine({
-			steps.do({|i|
-				var value = i / (steps-1);
-				values[index] = value;
+			(steps+1).do({|i|
+				var intensity = i.linlin(0, steps, 0.2, 1.0);
+				values = Array.fill(8, 0.0);
+				values[index] = intensity;
+				
 				NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *values);
-				(duration/steps).wait;
+				(emotion ++ " intensity: " ++ intensity.round(0.01)).postln;
+				
+				duration.wait;
 			});
 			
-			"Ramp complete.".postln;
+			// Reset to zero
+			values = Array.fill(8, 0.0);
+			NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *values);
+			("Reset " ++ emotion ++ " to zero").postln;
+			
 		}).play;
-	});
+	} {
+		"Unknown emotion. Use one of: joy, trust, fear, surprise, sadness, disgust, anger, anticipation".postln;
+	};
 };
 
-// UI for testing
-(
-Window.closeAll;
-w = Window("Warhol Emotion Tester", Rect(100, 100, 600, 400)).front;
-w.view.layout = VLayout(
-	HLayout(
-		StaticText().string_("Emotion Tester - Select a preset or adjust individual values"),
-		nil
-	),
-	HLayout(
-		// Preset buttons
-		VLayout(
-			StaticText().string_("Presets:"),
-			Button()
-				.states_([["All Joy"]])
-				.action_({ ~testSequences.allJoy.value }),
-			Button()
-				.states_([["All Trust"]])
-				.action_({ ~testSequences.allTrust.value }),
-			Button()
-				.states_([["All Fear"]])
-				.action_({ ~testSequences.allFear.value }),
-			Button()
-				.states_([["All Surprise"]])
-				.action_({ ~testSequences.allSurprise.value }),
-			Button()
-				.states_([["All Sadness"]])
-				.action_({ ~testSequences.allSadness.value }),
-			Button()
-				.states_([["All Disgust"]])
-				.action_({ ~testSequences.allDisgust.value }),
-			Button()
-				.states_([["All Anger"]])
-				.action_({ ~testSequences.allAnger.value }),
-			Button()
-				.states_([["All Anticipation"]])
-				.action_({ ~testSequences.allAnticipation.value }),
-			nil
-		),
-		VLayout(
-			StaticText().string_("Combinations:"),
-			Button()
-				.states_([["Happy"]])
-				.action_({ ~testSequences.happy.value }),
-			Button()
-				.states_([["Sad"]])
-				.action_({ ~testSequences.sad.value }),
-			Button()
-				.states_([["Anxious"]])
-				.action_({ ~testSequences.anxious.value }),
-			Button()
-				.states_([["Angry"]])
-				.action_({ ~testSequences.angry.value }),
-			Button()
-				.states_([["Balanced"]])
-				.action_({ ~testSequences.balanced.value }),
-			Button()
-				.states_([["Mixed"]])
-				.action_({ ~testSequences.mixed.value }),
-			Button()
-				.states_([["Stop All"]])
-				.action_({ ~testValues.value(0, 0, 0, 0, 0, 0, 0, 0) }),
-			nil
-		),
-		// Individual sliders
-		VLayout(
-			StaticText().string_("Individual Controls:"),
-			*[
-				[\joy, "Joy"], 
-				[\trust, "Trust"], 
-				[\fear, "Fear"], 
-				[\surprise, "Surprise"],
-				[\sadness, "Sadness"], 
-				[\disgust, "Disgust"], 
-				[\anger, "Anger"], 
-				[\anticipation, "Anticipation"]
-			].collect({|item|
-				var emotion = item[0], name = item[1];
-				var slider, label, val=0;
-				
-				HLayout(
-					StaticText().string_(name).minWidth_(80),
-					Slider().orientation_(\horizontal)
-						.action_({|sl| 
-							val = sl.value;
-							~playOneEmotion.value(emotion, val);
-						}),
-					StaticText().string_("0.0").minWidth_(30)
-						.align_(\center)
-						.background_(Color.black)
-						.stringColor_(Color.white)
-				);
-			})
-		)
-	)
-);
+// Test all emotions one by one
+~testAllEmotions = {|intensity=0.8, duration=5|
+	var emotions = ["joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"];
+	
+	("Testing all emotions one by one at intensity " ++ intensity ++ "...").postln;
+	
+	Routine({
+		emotions.do({|emotion|
+			("Now playing: " ++ emotion).postln;
+			~testEmotion.value(emotion, intensity);
+			duration.wait;
+		});
+		
+		// Reset all to zero
+		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *Array.fill(8, 0.0));
+		"All emotions reset to zero".postln;
+	}).play;
+};
+
+// Test emotion pairs
+~testEmotionPair = {|emotion1, emotion2, intensity1=0.7, intensity2=0.7|
+	var values = Array.fill(8, 0.0);
+	var emotions = ["joy", "trust", "fear", "surprise", "sadness", "disgust", "anger", "anticipation"];
+	var index1, index2;
+	
+	// Handle both symbols and strings
+	if(emotion1.isKindOf(Symbol)) { emotion1 = emotion1.asString; };
+	if(emotion2.isKindOf(Symbol)) { emotion2 = emotion2.asString; };
+	
+	// Find indices in a case-insensitive way
+	index1 = emotions.detectIndex({|name| name.asString.toLower == emotion1.asString.toLower });
+	index2 = emotions.detectIndex({|name| name.asString.toLower == emotion2.asString.toLower });
+	
+	if(index1.notNil and: { index2.notNil }) {
+		values[index1] = intensity1;
+		values[index2] = intensity2;
+		
+		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *values);
+		("Testing " ++ emotion1 ++ "(" ++ intensity1 ++ ") + " ++ emotion2 ++ "(" ++ intensity2 ++ ")").postln;
+	} {
+		"Unknown emotion(s). Use any of: joy, trust, fear, surprise, sadness, disgust, anger, anticipation".postln;
+	};
+};
+
+// Test common emotional combinations
+~testCommonCombinations = {|duration=8|
+	var combinations = [
+		// Happy combinations
+		["joy", "trust", 0.8, 0.6],
+		["joy", "anticipation", 0.7, 0.5],
+		
+		// Anxious combinations
+		["fear", "anticipation", 0.6, 0.7],
+		["surprise", "fear", 0.5, 0.6],
+		
+		// Sad combinations
+		["sadness", "disgust", 0.7, 0.4],
+		["sadness", "fear", 0.8, 0.3],
+		
+		// Angry combinations
+		["anger", "disgust", 0.8, 0.5],
+		["anger", "surprise", 0.7, 0.4]
+	];
+	
+	"Testing common emotional combinations...".postln;
+	
+	Routine({
+		combinations.do({|combo|
+			("Now playing: " ++ combo[0] ++ " + " ++ combo[1]).postln;
+			~testEmotionPair.value(combo[0], combo[1], combo[2], combo[3]);
+			duration.wait;
+		});
+		
+		// Reset all to zero
+		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *Array.fill(8, 0.0));
+		"All emotions reset to zero".postln;
+	}).play;
+};
+
+// Test a journal entry emotion profile
+~testEmotionProfile = {|joy=0, trust=0, fear=0, surprise=0, sadness=0, disgust=0, anger=0, anticipation=0|
+	NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", 
+		joy, trust, fear, surprise, sadness, disgust, anger, anticipation);
+		
+	"Testing custom emotion profile:".postln;
+	"  Joy: %".format(joy).postln;
+	"  Trust: %".format(trust).postln;
+	"  Fear: %".format(fear).postln;
+	"  Surprise: %".format(surprise).postln;
+	"  Sadness: %".format(sadness).postln;
+	"  Disgust: %".format(disgust).postln;
+	"  Anger: %".format(anger).postln;
+	"  Anticipation: %".format(anticipation).postln;
+};
+
+// Test some sample journal entry profiles
+~testSampleEntries = {|duration=15|
+	var entries = [
+		// A joyful day
+		[0.8, 0.7, 0.1, 0.3, 0.1, 0.0, 0.0, 0.5],
+		
+		// An anxious day
+		[0.2, 0.1, 0.7, 0.6, 0.4, 0.3, 0.2, 0.6],
+		
+		// A sad day
+		[0.1, 0.2, 0.3, 0.1, 0.8, 0.4, 0.2, 0.1],
+		
+		// An angry day
+		[0.1, 0.0, 0.4, 0.3, 0.3, 0.6, 0.8, 0.5],
+		
+		// A mixed/complex day
+		[0.4, 0.3, 0.5, 0.6, 0.5, 0.2, 0.4, 0.7]
+	];
+	
+	var descriptions = [
+		"A joyful day",
+		"An anxious day",
+		"A sad day",
+		"An angry day",
+		"A complex/mixed day"
+	];
+	
+	"Testing sample journal entry profiles...".postln;
+	
+	Routine({
+		entries.do({|entry, i|
+			("Now playing: " ++ descriptions[i]).postln;
+			NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *entry);
+			duration.wait;
+		});
+		
+		// Reset all to zero
+		NetAddr("127.0.0.1", 57121).sendMsg("/warhol/entry/emotions", *Array.fill(8, 0.0));
+		"All emotions reset to zero".postln;
+	}).play;
+};
+
+// Stop all patterns and reset - delegates to warholEmotions.scd
+~reset = {
+	// Call stopAllPatterns from warholEmotions.scd
+	~stopAllPatterns.value;
+};
 )
 
-// Example usage:
-// ~testValues.value(0.8, 0.2, 0.1, 0.5, 0.3, 0.0, 0.0, 0.7);  // Custom values
-// ~testSequences.happy.value;  // Play happy preset
-// ~rampEmotion.value(\joy, 10);  // Ramp joy from 0 to 1 over 10 seconds
-// ~playOneEmotion.value(\sadness, 0.7);  // Play just sadness at 0.7 intensity 
+// Display available test functions
+(
+"Warhol Emotions Test Functions:".postln;
+"----------------------------".postln;
+"~testEmotion.(\"joy\", 0.8)                - Test a single emotion".postln;
+"~emotionIntensitySweep.(\"joy\", 5, 2)      - Sweep through intensity levels".postln;
+"~testAllEmotions.(0.8, 5)                - Test each emotion one by one".postln;
+"~testEmotionPair.(\"joy\", \"trust\", 0.7, 0.6) - Test two emotions together".postln;
+"~testCommonCombinations.(8)              - Test common emotional combinations".postln;
+"~testEmotionProfile.(0.8, 0.6, 0.1, 0.3, 0.2, 0.1, 0.2, 0.4) - Test a custom emotion profile".postln;
+"~testSampleEntries.(15)                  - Test predefined sample entries".postln;
+"~reset.()                               - Stop all patterns and reset".postln;
+"----------------------------".postln;
+"To use: Select any function above and evaluate it (Ctrl+Enter)".postln;
+"NOTE: You can use either format: ~testEmotion.(\"joy\", 0.8) or ~testEmotion.value(\"joy\", 0.8)".postln;
+)
+
+// Example to try (uncomment and select/execute to test)
+// ~testEmotion.("joy", 0.8); 

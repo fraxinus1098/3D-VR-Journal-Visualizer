@@ -16,11 +16,11 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Enhanced error handling and resource management
 - Added JSON optimization to reduce file size by removing embeddings
 
-**Phase 5: SuperCollider Audio Implementation (in progress).** We're currently replacing the Web Audio API-based system with a more sophisticated SuperCollider implementation:
-- Will generate dynamic, algorithmic compositions based on journal entry emotion values
-- Each emotion will have its own unique instrument with parameterized tempo and timbre
-- Entry selection will send emotion data to SuperCollider via OSC for real-time audio synthesis
-- Requires running SuperCollider locally alongside the web application
+**Phase 5: SuperCollider Audio Implementation (Modified Approach).** We've successfully implemented SuperCollider-based audio generation:
+- Created custom instruments for each of the 8 emotions with unique sonic characteristics
+- Implemented direct testing functions for reliable audio output without OSC communication
+- Fixed audio routing issues to ensure consistent playback
+- This simplified approach allows manual triggering of emotion-based sounds while exploring the visualization
 
 ## Setup
 
@@ -46,15 +46,24 @@ npm install
 npm run dev
 ```
 
-4. For VR testing:
-   - Connect your Oculus Quest 3 to the same network as your development machine
-   - Navigate to the development server URL on the Quest browser
-   - Click the VR button to enter immersive mode
+4. For non-VR testing:
+   - Open the development server URL in your browser
+   - Use keyboard and mouse controls to navigate the environment
 
-5. For SuperCollider audio (once implemented):
+5. For SuperCollider audio:
    - Start the SuperCollider application
-   - Load and run the `warholEmotions.scd` file
-   - Start the web application, which will communicate with SuperCollider
+   - Open and run the `warholEmotions.scd` file (evaluate the first large code block)
+   - Use the `~superDirectTest.value("emotion", intensity)` function to trigger sounds
+   - Example: `~superDirectTest.value("joy", 0.8)` or `~superDirectTest.value("sadness", 0.7)`
+
+## Running the Applications Together
+
+1. Start the web application with `npm run dev`
+2. Start SuperCollider and open `warholEmotions.scd`
+3. Evaluate the main code block in SuperCollider (select it and press Ctrl+Enter)
+4. Navigate the 3D environment in your browser
+5. As you explore and select journal entries in the web app, manually trigger corresponding emotions in SuperCollider
+6. For example, if you select an entry with high joy, run `~superDirectTest.value("joy", 0.8)` in SuperCollider
 
 ## Project Structure
 
@@ -66,7 +75,7 @@ npm run dev
 │   │   ├── warhol_final_optimized.json # Size-optimized data without embeddings
 │   │   ├── sample.json         # Smaller sample data for testing
 │   │   └── .gitattributes      # Git LFS configuration for large data file
-│   └── sounds/                 # Background audio loops for emotions (to be replaced by SuperCollider)
+│   └── sounds/                 # Background audio loops for emotions (legacy)
 │       ├── 1 - Joy.mp3
 │       ├── ... (8 files total)
 │       └── 8 - Anticipation.mp3
@@ -80,15 +89,15 @@ npm run dev
 │   │   ├── Minimap.js          # Renders a 2D minimap of the 3D space
 │   │   └── Notifications.js    # Handles displaying in-app messages
 │   ├── utils/
-│   │   ├── AudioSystem.js      # Manages audio (being updated for SuperCollider)
-│   │   ├── OscBridge.js        # OSC communication with SuperCollider (planned)
+│   │   ├── AudioSystem.js      # Manages audio (Web Audio API implementation)
 │   │   ├── InteractionManager.js # Handles raycasting and object selection
 │   │   └── data-loader.js      # Loads the main journal data
 │   ├── visualizers/
 │   │   └── OrbVisualizer.js    # Creates and manages the 3D orbs representing entries
 │   └── main.js                 # Main application entry point, initializes Three.js/WebXR
 ├── supercollider/              # SuperCollider files for audio generation
-│   └── warholEmotions.scd      # SuperCollider definitions for emotional instruments (planned)
+│   ├── warholEmotions.scd      # SuperCollider definitions for emotional instruments
+│   └── README.md               # Specific instructions for SuperCollider setup
 ├── data_processing/            # Python scripts for data extraction & NLP (Runs locally)
 │   ├── extract_text.py         # Extracts text from PDF
 │   ├── parse_entries.py        # Parses text into structured journal entries
@@ -117,7 +126,6 @@ npm run dev
 - Three.js and WebXR for 3D visualization
 - Vite for fast development
 - SuperCollider for algorithmic audio composition
-- osc.js for Open Sound Control communication
 - **Data Processing:**
   - Python
   - pdfplumber

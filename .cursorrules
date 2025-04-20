@@ -3,140 +3,152 @@
 documentation:
   - project_name: Andy Warhol 3D Journal Visualization
   - description: |
-      A WebXR application visualizing Andy Warhol's journal entries (~4000 from "The Andy Warhol Diaries")
+      A WebXR application visualizing Andy Warhol's journal entries (~2000 from "The Andy Warhol Diaries")
       as an immersive 3D mindmap viewable on Oculus Quest 3. Uses NLP (OpenAI APIs) to analyze
       entries for emotional content, topics, and entities, creating an interactive landscape based
-      on embeddings and UMAP dimensionality reduction.
+      on embeddings and UMAP dimensionality reduction. The audio system is being rebuilt using SuperCollider and OSC.
   - data_source: "The Andy Warhol Diaries" PDF
-  - core_concept: 3D mindmap/landscape based on NLP analysis (emotion, topics, entities, embeddings) and UMAP dimensionality reduction.
-  - target_platform: WebXR on Oculus Quest 3.
+  - core_concept: 3D mindmap/landscape based on NLP analysis (emotion, topics, entities, embeddings) and UMAP dimensionality reduction. Dynamic audio generation via SuperCollider/OSC.
+  - target_platform: WebXR on Oculus Quest 3 (with desktop fallback controls).
   - visualization_style: Abstract space environment with orbs representing entries, colored/sized by emotion, positioned by UMAP.
 
 goals:
-  - Process and analyze ~4000 journal entries using Python and OpenAI APIs.
-  - Generate structured JSON data including text, date, location, sentiment (Plutchik's 8 emotions), topics, entities (people, places), embeddings, UMAP coordinates, and related entries.
-  - Develop a Three.js WebXR application using Vite.
-  - Implement interactive exploration: movement (continuous/teleport), orb selection, entry display panel (showing text, date, topics, entities), related entry highlighting.
-  - Integrate dynamic ambient audio based on emotional clusters (Web Audio API).
-  - Deploy the application via GitHub Pages.
+  - Process and analyze ~2000 journal entries using Python and OpenAI APIs (Completed).
+  - Generate structured JSON data including text, date, location, sentiment, topics, entities, embeddings, UMAP coordinates, and related entries (Completed). Create an optimized version without embeddings for deployment (Completed).
+  - Develop a Three.js WebXR application using Vite (Core structure completed).
+  - Implement interactive exploration: movement (VR/desktop), orb selection, entry display panel, related entry highlighting (Completed).
+  - Implement performance optimizations (LOD, culling) and monitoring tools (Completed).
+  - **Replace** the previous Web Audio API file-based system with a dynamic SuperCollider-based audio system using OSC communication (Current Focus - Phase 5).
+  - Refine the application, prepare for demonstration (local network setup, casting), and deploy via GitHub Pages.
+
+project_status:
+  - phase_1_data_processing: Completed
+  - phase_2_basic_webxr_env: Completed (Including desktop controls)
+  - phase_3_visualization_features: Completed
+  - phase_4_1_performance_opts: Completed
+  - phase_4_4_bug_fixes_refinements: Completed (Including JSON optimization script)
+  - phase_4_2_dev_optimization_demo: In Progress / Next
+  - phase_4_3_testing_presentation_setup: In Progress / Next
+  - phase_5_supercollider_audio: Current Major Focus
 
 dependencies:
-  # Python Data Processing Dependencies
+  # Python Data Processing Dependencies (Phase 1 - Completed)
   python:
-    - language_version: 3.x (Specify if known, e.g., 3.10+)
+    - language_version: 3.x
     - main_libraries:
         - pdfplumber: For PDF text extraction.
-        - openai: For interacting with GPT-4o mini (analysis) and text-embedding-3-large (embeddings).
-        - umap-learn: For UMAP dimensionality reduction (n_components=3).
-        - regex (re): For parsing journal entry structures (dates, etc.).
-        - numpy: Likely needed for embedding/UMAP operations.
+        - openai: For interacting with GPT-4o mini and text-embedding-3-large.
+        - umap-learn: For UMAP dimensionality reduction.
+        - regex (re): For parsing journal entry structures.
+        - numpy: For embedding/UMAP operations.
         - tqdm: For progress bars during batch processing.
-    # Note: User opted out of explicit virtual environment mention.
+    - utility_scripts:
+        - `optimize_json.py`: Removes 'embedding' field from the final JSON for deployment.
 
   # JavaScript Visualization Application Dependencies
   javascript:
-    - framework: three.js (Utilizing WebXR API integration, VRButton, XRControllerModelFactory).
+    - framework: three.js (Utilizing WebXR API, VRButton, XRControllerModelFactory).
     - build_tool: vite
+    - key_libraries:
+        - osc.js: For OSC communication with SuperCollider (Phase 5).
     - potential_libraries:
-        - UMAP-JS (or similar): Unlikely needed as UMAP is done in Python.
-        - Text rendering library: Consider troika-three-text or three-mesh-ui for readable text panels in VR.
-    - api: Web Audio API (for spatial/dynamic audio).
+        - Text rendering library: e.g., troika-three-text or three-mesh-ui for VR text panels.
+    - browser_apis:
+        - WebXR API
+        - Web Audio API (Potentially minimal use by osc.js, or for fallback if SC fails. Primary audio logic shifted to SuperCollider).
+
+  # Audio Generation Dependencies (Phase 5 - Current Focus)
+  supercollider:
+    - language: SuperCollider (sclang)
+    - core_concepts: SynthDefs, OSC communication (OSCdef), Patterns (Pbind).
+    - main_file: `warholEmotions.scd` (likely location for SynthDefs and OSC setup).
 
   # Deployment
   deployment:
     - platform: GitHub Pages
 
 technical_details:
-  # Data Processing Pipeline (Python)
+  # Data Processing Pipeline (Python - Phase 1 - Completed)
   data_processing:
-    - pipeline_steps: |
-        1. Extract PDF text (pdfplumber).
-        2. Parse Entries (regex for dates).
-        3. Group entries by year.
-        4. Process year-by-year in smaller batches:
-            - Analyze Batch (OpenAI GPT-4o mini): Get emotions, topics, entities per entry. Respect token limits (e.g., 128K context).
-            - Generate Embeddings Batch (OpenAI text-embedding-3-large): Get 3072-dim vectors. Respect token limits (e.g., 8191 input tokens per call).
-        5. Save interim results frequently (e.g., per batch/year) for resilience.
-        6. Merge all processed entries from interim files.
-        7. Reduce Dimensionality (UMAP): Apply UMAP (n=3) on the *complete* set of embeddings.
-        8. Calculate Relations (cosine similarity on embeddings).
-        9. Output final comprehensive JSON.
-    - batch_processing_strategy:
-        - Group entries by year initially for logical division and checkpointing.
-        - Process each year's entries in smaller, manageable batches (e.g., 10-30 entries) for API calls to avoid token limits.
-        - Implement error handling and retry logic (e.g., simple sleep/backoff) for API calls.
-        - Save processed data incrementally (e.g., `warhol_{year}_batch_{i}.json`, `warhol_{year}_processed.json`) before final merge.
-    - analysis_api_call: Use GPT-4o mini. Single prompt designed to extract JSON containing `id`, Plutchik's 8 `emotions` (0.0-1.0 scale), `topics` array, and `entities` object (`people`, `places` arrays) for multiple entries in a batch.
-    - embeddings: Use text-embedding-3-large model. Process in batches respecting input token limits (8191). Store the full 3,072 dimension vectors.
-    - dimensionality_reduction: Use UMAP with `n_components=3` and `random_state=42` on the *full* dataset after merging batches. Scale coordinates appropriately for Three.js scene.
-    - output_format: Final output is a single JSON file (`warhol_complete.json` or similar) containing the `entries` array.
+    - status: Completed
+    - pipeline_summary: Extracted PDF -> Parsed Entries -> Grouped by Year -> Batched Analysis (GPT-4o mini: emotions, topics, entities) -> Batched Embeddings (text-embedding-3-large) -> Saved Interim -> Merged -> UMAP (n=3) -> Calculated Relations -> Saved Full JSON (`public/data/warhol_complete.json`).
+    - final_optimization: Ran `optimize_json.py` script to remove `embedding` field, creating a smaller JSON (e.g., `warhol_optimized.json`) for application loading. The application likely loads this optimized version.
 
-  # Visualization Application (Three.js / WebXR)
+  # Visualization Application (Three.js / WebXR - Phases 2 & 3 - Completed)
   visualization:
-    - scene_setup: Basic Three.js scene, perspective camera (~1.6m height), WebGLRenderer with XR enabled. Dark, abstract space background (e.g., `scene.background = new THREE.Color(0x000011)`). Ambient and directional lighting.
-    - orbs:
-        - Represent individual journal entries (THREE.SphereGeometry).
-        - Position: Based on `coordinates` (x, y, z) from JSON data.
-        - Color: Determined by the dominant emotion (map Plutchik emotions to distinct colors). Use `MeshStandardMaterial` with `emissive` property for glow.
-        - Size: Scaled based on overall emotional intensity (sum or max of emotion scores).
-        - UserData: Store corresponding entry data (`entry`) and `interactive` flag on each orb mesh.
-    - connections: Visual links (e.g., THREE.LineSegments or TubeGeometry) between orbs representing related entries (`relatedEntries` array). Triggered on selection.
-    - background: Abstract, minimalist space environment.
-    - text_panel: Floating panel (e.g., THREE.Group with Plane background) displaying selected entry text, date, location, topics, and entities. Should follow user gaze/position at readable distance. Use a VR-friendly text rendering solution.
+    - status: Core features completed.
+    - scene_setup: Basic Three.js scene, perspective camera, WebGLRenderer (XR enabled), dark background, lighting.
+    - orbs: Spheres representing entries. Positioned by UMAP `coordinates`. Color based on dominant emotion (mapped from Plutchik). Size based on emotional intensity. UserData stores `entry` info.
+    - connections: Lines drawn between selected orb and its `relatedEntries`.
+    - text_panel: Floating panel showing selected entry details (date, text, topics, entities). Uses VR-friendly text rendering. Follows user gaze/position.
 
-  # Interaction (WebXR / Three.js)
+  # Interaction (WebXR / Three.js - Phase 2 & 3 - Completed)
   interaction:
-    - controllers: Use standard Quest 3 controllers (load models via `XRControllerModelFactory`). Implement raycasting from controllers for selection.
-    - movement: Continuous movement using controller thumbstick/touchpad. Optional teleportation for large distances.
-    - selection: Raycaster intersects with interactive orbs. Highlight selected orb (e.g., change material, outline). Display entry details in the text panel. Highlight related orbs and show connection lines.
-    - ui: Minimalist, VR-optimized controls (e.g., close button on text panel).
+    - status: Completed.
+    - controllers_vr: Standard Quest 3 controllers via `XRControllerModelFactory`. Raycasting for selection.
+    - movement_vr: Continuous thumbstick movement, optional teleportation.
+    - controllers_desktop: Active when not in VR. WASD/Arrows (move), Mouse Drag (rotate), Space (up), Shift (down). Raycasting likely uses mouse position.
+    - selection: Raycaster intersects interactive orbs. Highlights selected orb. Displays details in panel. Triggers related entry highlighting and audio (via OSC).
+    - ui: Minimalist, VR-optimized controls (e.g., panel close button).
 
-  # Audio (Web Audio API)
+  # Audio (Phase 5 - Current Focus - Replacing Phase 3.5)
   audio:
-    - ambient: 8 base audio loops (one per Plutchik emotion).
-    - spatialization/blending: Use Web Audio API's GainNodes. Dynamically crossfade between emotion loops based on user's proximity to emotional clusters in the 3D space (calculated based on orb positions and their dominant emotions).
-    - interaction_sounds: Subtle sounds for selection, deselection, UI interactions.
+    - status: Refactoring to SuperCollider + OSC (Phase 5). Previous Web Audio file-based system (Phase 3.5) is being replaced.
+    - architecture: JavaScript (Three.js app) <-> OSC <-> SuperCollider Server.
+    - supercollider_side (`warholEmotions.scd`):
+        - Runs an OSC server (listening on e.g., port 57121).
+        - Defines 8 `SynthDefs`, one for each Plutchik emotion, with unique characteristics.
+        - Uses `OSCdef` to receive messages from the web app (e.g., `/warhol/emotion/joy value`).
+        - Uses `Pbind` or other Pattern classes for dynamic, evolving sound generation based on received emotion values.
+        - May include master effects (reverb, compression).
+    - javascript_side:
+        - `OscBridge.js`: Class handling OSC client setup and message sending using `osc.js`.
+        - `AudioSystem.js`: Refactored to use `OscBridge.js`. Calculates emotion values based on proximity or selection. Sends OSC messages instead of playing local files. Manages mute state ('I' key toggle). Contains fallback logic if SC connection fails.
+        - `playEntryAudio(entry)`: Function likely triggers sending the selected entry's full emotion profile via OSC.
+    - deprecation: Code related to loading/playing `.mp3` files from `/public/sounds/` via Web Audio API is likely commented out or removed.
 
-  # Performance
-  performance_considerations:
-    - Frustum culling (built into Three.js).
-    - Level of Detail (LOD) for distant orbs (simpler geometry/material).
-    - Instanced Meshes if many similar orbs cause performance bottlenecks.
-    - Optimize raycasting frequency/targets.
-    - Limit concurrent audio sources/processing.
-    - Test frequently on target hardware (Quest 3).
+  # Performance Optimizations & Tools (Phase 4.1 - Completed)
+  performance_optimizations:
+    - status: Completed.
+    - implementation: `PerformanceOptimizer` class handling frustum culling and Level of Detail (LOD - simpler geometry/materials for distant orbs). Smart geometry caching. Optimized update loops. Resource disposal functions.
+    - monitoring: `PerformanceMonitor` class to display metrics.
+    - known_fixes: Resolved issue where selected orbs froze when optimizations were active.
+    - keyboard_toggles:
+        - 'E': Toggle Emotion Wheel (Assumed UI element, verify implementation).
+        - 'P': Toggle performance optimizations (on/off).
+        - 'F': Toggle performance monitor display (on/off).
+        - 'I': Toggle audio mute (on/off).
+
+  # Demonstration Setup (Phase 4.2 / 4.3 - In Progress / Next)
+  demonstration_setup:
+    - focus: Preparing for presentation.
+    - tasks: Configure Vite for local network HTTPS. Optimize data loading for network. Test Quest 3 casting. Projector setup. Create demo scripts/user guide.
 
 # Data Structure Reference (Output from Python, Input to JavaScript)
 data_structure:
-  description: The structure of the main JSON data file generated by the Python script.
-  format: |
+  description: |
+    The structure of the JSON data file generated by the Python script.
+    Two versions exist:
+    1. `warhol_complete.json`: Contains all fields, including the large `embedding` vector.
+    2. `warhol_optimized.json` (or similar): Identical structure BUT *without* the `embedding` field. This smaller version is likely loaded by the WebXR application.
+  format_example (Reflects structure before optimization): |
     {
       "entries": [
         {
-          "id": "string", // Unique identifier for the entry
+          "id": "string",
           "date": "YYYY-MM-DD",
-          "location": "string | null", // Location mentioned in entry, if available
-          "text": "string", // Full journal entry text
+          "location": "string | null",
+          "text": "string",
           "emotions": { // Plutchik's 8 emotions, scores 0.0-1.0
-            "joy": 0.7,
-            "trust": 0.5,
-            "fear": 0.1,
-            "surprise": 0.2,
-            "sadness": 0.0,
-            "disgust": 0.0,
-            "anger": 0.0,
-            "anticipation": 0.3
+            "joy": 0.7, "trust": 0.5, "fear": 0.1, "surprise": 0.2,
+            "sadness": 0.0, "disgust": 0.0, "anger": 0.0, "anticipation": 0.3
           },
-          "topics": ["string", ...], // Key topics identified
-          "entities": { // Key entities identified
-            "people": ["string", ...],
-            "places": ["string", ...]
-          },
-          "embedding": [float, float, ...], // High-dimensional embedding vector (3072 dims)
+          "topics": ["string", ...],
+          "entities": { "people": ["string", ...], "places": ["string", ...] },
+          "embedding": [float, float, ...], // *REMOVED in optimized version*
           "coordinates": {"x": float, "y": float, "z": float}, // UMAP 3D coordinates
-          "relatedEntries": ["string", ...] // List of IDs of related entries (based on embedding similarity)
+          "relatedEntries": ["string", ...] // List of IDs of related entries
         }
-        // ... more entries (~4000 total)
+        // ... ~2000 entries
       ]
-      // NOTE: "paintings" array removed based on updated plan
     }
