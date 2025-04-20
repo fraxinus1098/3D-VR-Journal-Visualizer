@@ -3,83 +3,133 @@
  * 
  * This class manages sending OSC messages to SuperCollider when journal entries are selected,
  * transmitting emotion values that control the algorithmic music generation.
+ * 
+ * Uses WebSocket for browser compatibility instead of direct UDP connections.
  */
 
 class OscBridge {
   constructor() {
     this.connected = false;
-    this.connection = null;
-    this.port = 57121; // Default SuperCollider OSC port
-    this.address = '127.0.0.1'; // Local connection
+    this.socket = null;
+    this.wsUrl = "ws://localhost:8080"; // WebSocket server URL
     this.connectionAttempts = 0;
     this.maxConnectionAttempts = 3;
     
-    // Import osc.js dynamically
-    this.loadOscLib();
+    // Initialize connection
+    this.connect();
   }
   
   /**
-   * Dynamically import the osc.js library
-   * This allows the application to still run if the library fails to load
-   */
-  async loadOscLib() {
-    try {
-      // This would use dynamic import in the actual implementation
-      // Due to module bundling considerations, we'll need to properly install
-      // and import the osc.js library in the final implementation
-      console.log('OscBridge: would load osc.js library here');
-      
-      // For now, just simulate success
-      this.oscLoaded = true;
-      console.log('OscBridge: OSC library loaded successfully');
-      
-      // Try to establish connection after loading
-      await this.connect();
-    } catch (error) {
-      console.error('OscBridge: Failed to load OSC library:', error);
-      this.oscLoaded = false;
-    }
-  }
-  
-  /**
-   * Connect to SuperCollider via OSC
+   * Connect to WebSocket OSC bridge
    * @returns {Promise<boolean>} True if connection successful, false otherwise
    */
   async connect() {
-    if (!this.oscLoaded) {
-      console.error('OscBridge: Cannot connect - OSC library not loaded');
-      return false;
-    }
-    
-    if (this.connected) {
+    if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
       console.log('OscBridge: Already connected');
       return true;
     }
     
+    return new Promise((resolve) => {
+      try {
+        this.connectionAttempts++;
+        console.log(`OscBridge: Attempting to connect to WebSocket OSC bridge (attempt ${this.connectionAttempts}/${this.maxConnectionAttempts})`);
+        
+        // Create WebSocket connection
+        this.socket = new WebSocket(this.wsUrl);
+        
+        // Set up event listeners
+        this.socket.onopen = () => {
+          console.log(`OscBridge: Successfully connected to WebSocket OSC bridge`);
+          this.connected = true;
+          this.connectionAttempts = 0;
+          
+          // Send a test message
+          this.sendTestMessage();
+          
+          resolve(true);
+        };
+        
+        this.socket.onclose = () => {
+          console.log('OscBridge: WebSocket connection closed');
+          this.connected = false;
+          
+          if (this.connectionAttempts < this.maxConnectionAttempts) {
+            console.log('OscBridge: Will retry connection after delay...');
+            setTimeout(() => this.connect(), 2000);
+          }
+          
+          resolve(false);
+        };
+        
+        this.socket.onerror = (error) => {
+          console.error("OscBridge: WebSocket error:", error);
+          this.connected = false;
+          resolve(false);
+        };
+        
+      } catch (error) {
+        console.error('OscBridge: Failed to connect to WebSocket OSC bridge:', error);
+        
+        this.connected = false;
+        
+        if (this.connectionAttempts < this.maxConnectionAttempts) {
+          console.log('OscBridge: Will retry connection...');
+          setTimeout(() => this.connect(), 2000);
+        } else {
+          console.error('OscBridge: Max connection attempts reached, giving up');
+        }
+        
+        resolve(false);
+      }
+    });
+  }
+  
+  /**
+   * Send a test message to SuperCollider
+   */
+  sendTestMessage() {
+    if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    
+    console.log('OscBridge: Sending test message to SuperCollider');
+    
+    // Create message with low values to avoid unwanted sounds
+    const message = {
+      address: "/warhol/entry/emotions",
+      values: [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]
+    };
+    
+    this.socket.send(JSON.stringify(message));
+  }
+  
+  /**
+   * Send a volume control message to SuperCollider
+   * @param {number} volume - Volume level (0-1)
+   * @returns {boolean} Success status
+   */
+  sendVolumeControl(volume) {
+    if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.error('OscBridge: Cannot send volume control - not connected');
+      return false;
+    }
+    
     try {
-      this.connectionAttempts++;
-      console.log(`OscBridge: Attempting to connect to SuperCollider (attempt ${this.connectionAttempts}/${this.maxConnectionAttempts})`);
+      const clampedVolume = Math.max(0, Math.min(1, volume));
+      console.log(`OscBridge: Sending volume control: ${clampedVolume.toFixed(2)}`);
       
-      // In the actual implementation, we would create the OSC connection here
-      // For now, simulate a successful connection
-      this.connected = true;
-      console.log(`OscBridge: Successfully connected to SuperCollider at ${this.address}:${this.port}`);
+      // Create message with volume value
+      const message = {
+        address: "/warhol/volume",
+        values: [clampedVolume]
+      };
       
-      // Reset connection attempts on success
-      this.connectionAttempts = 0;
+      // Send through WebSocket
+      this.socket.send(JSON.stringify(message));
       
       return true;
     } catch (error) {
-      console.error('OscBridge: Failed to connect to SuperCollider:', error);
-      
-      if (this.connectionAttempts < this.maxConnectionAttempts) {
-        console.log('OscBridge: Will retry connection...');
-        // In real implementation, add a delay before retry
-        setTimeout(() => this.connect(), 2000);
-      } else {
-        console.error('OscBridge: Max connection attempts reached, giving up');
-      }
-      
+      console.error('OscBridge: Failed to send volume control:', error);
       return false;
     }
   }
@@ -90,33 +140,61 @@ class OscBridge {
    * @returns {boolean} True if message sent successfully, false otherwise
    */
   sendEmotionValues(emotions) {
-    if (!this.connected) {
+    // If not connected, try to reconnect but return false for this attempt
+    if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.error('OscBridge: Cannot send emotions - not connected');
-      // Try to reconnect
       this.connect();
       return false;
     }
     
     try {
+      // Validate emotions object
+      if (!emotions || typeof emotions !== 'object') {
+        console.error('OscBridge: Invalid emotions object:', emotions);
+        return false;
+      }
+      
+      // Detailed validation of emotion values
+      console.log('OscBridge: Raw emotion values:');
+      Object.entries(emotions).forEach(([emotion, value]) => {
+        const parsedValue = parseFloat(value || 0);
+        console.log(`  - ${emotion}: ${value} (parsed: ${parsedValue})`);
+        if (isNaN(parsedValue)) {
+          console.warn(`OscBridge: Invalid emotion value for ${emotion}: ${value}`);
+        }
+      });
+      
       // Extract emotion values in the correct order
       const values = [
-        emotions.joy || 0,
-        emotions.trust || 0,
-        emotions.fear || 0,
-        emotions.surprise || 0,
-        emotions.sadness || 0, 
-        emotions.disgust || 0,
-        emotions.anger || 0,
-        emotions.anticipation || 0
+        parseFloat(emotions.joy || 0),
+        parseFloat(emotions.trust || 0),
+        parseFloat(emotions.fear || 0),
+        parseFloat(emotions.surprise || 0),
+        parseFloat(emotions.sadness || 0), 
+        parseFloat(emotions.disgust || 0),
+        parseFloat(emotions.anger || 0),
+        parseFloat(emotions.anticipation || 0)
       ];
+      
+      // Check if all values are zero - this might indicate a data problem
+      const allZeros = values.every(val => val === 0);
+      if (allZeros) {
+        console.warn('OscBridge: All emotion values are zero. This may indicate missing data.');
+      }
       
       console.log('OscBridge: Sending emotion values to SuperCollider:', values);
       
-      // In the actual implementation, send the OSC message here
-      // This would use the osc.js library's send method
-      // For now, just log the values
-      console.log(`OscBridge: Would send OSC message to /warhol/entry/emotions with values: ${values.join(', ')}`);
+      // Create message
+      const message = {
+        address: "/warhol/entry/emotions",
+        values: values
+      };
       
+      // Send through WebSocket
+      this.socket.send(JSON.stringify(message));
+      
+      // Log confirmation
+      console.log('OscBridge: Message sent successfully');
       return true;
     } catch (error) {
       console.error('OscBridge: Failed to send emotion values:', error);
@@ -129,7 +207,7 @@ class OscBridge {
    * @returns {boolean} True if message sent successfully, false otherwise
    */
   stopAllSounds() {
-    if (!this.connected) {
+    if (!this.connected || !this.socket || this.socket.readyState !== WebSocket.OPEN) {
       console.error('OscBridge: Cannot stop sounds - not connected');
       return false;
     }
@@ -137,10 +215,14 @@ class OscBridge {
     try {
       console.log('OscBridge: Sending stop command to SuperCollider');
       
-      // In the actual implementation, send an OSC message with all zeros
-      // or a specific stop command
-      // For now, just log the action
-      console.log('OscBridge: Would send stop command to SuperCollider');
+      // Create message with all zeros
+      const message = {
+        address: "/warhol/entry/emotions",
+        values: [0, 0, 0, 0, 0, 0, 0, 0]
+      };
+      
+      // Send through WebSocket
+      this.socket.send(JSON.stringify(message));
       
       return true;
     } catch (error) {
@@ -153,18 +235,21 @@ class OscBridge {
    * Close the OSC connection
    */
   disconnect() {
-    if (!this.connected) {
+    if (!this.connected || !this.socket) {
       return;
     }
     
     try {
-      console.log('OscBridge: Disconnecting from SuperCollider');
+      console.log('OscBridge: Disconnecting from WebSocket OSC bridge');
       
-      // In the actual implementation, close the OSC connection
-      // For now, just update the state
+      // Send all zeros before disconnecting
+      this.stopAllSounds();
+      
+      // Close the socket
+      this.socket.close();
       this.connected = false;
       
-      console.log('OscBridge: Disconnected from SuperCollider');
+      console.log('OscBridge: Disconnected from WebSocket OSC bridge');
     } catch (error) {
       console.error('OscBridge: Error while disconnecting:', error);
     }

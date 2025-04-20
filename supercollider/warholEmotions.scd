@@ -59,11 +59,23 @@ s.waitForBoot({
 	// Master effects
 	~masterOut = Bus.audio(s, 2);
 	
+	// Create master synth FIRST to ensure proper routing
+	~masterSynth = Synth(\master, [\out, 0, \in, ~masterOut], addAction: \addToHead);
+	"Master synth created, connected bus to hardware output".postln;
+	
 	// Test the master bus
 	{
 		var sig = SinOsc.ar(330) * EnvGen.kr(Env.perc(0.01, 1), doneAction: 2) * 0.5;
 		Out.ar(~masterOut, sig ! 2);
 	}.play;
+	"Test sound sent to master bus".postln;
+	
+	// Play a direct sound to hardware to confirm audio routing
+	{
+		var sig = SinOsc.ar(440) * EnvGen.kr(Env.perc(0.01, 0.5), doneAction: 2) * 0.3;
+		Out.ar(0, sig ! 2); // Direct to hardware
+	}.play;
+	"Direct test sound played to hardware output".postln;
 	
 	// Create scales and chords for patterns
 	~scales = (
@@ -309,7 +321,7 @@ s.waitForBoot({
 	}).add;
 	
 	// Master effect synth (reverb, compression)
-	SynthDef(\master, {|out=0, in=0|
+	SynthDef(\master, {|out=0, in=0, amp=0.7|
 		var sig = In.ar(in, 2);
 		
 		// Apply effects
@@ -317,6 +329,9 @@ s.waitForBoot({
 		
 		// Multi-band compression
 		sig = Compander.ar(sig, sig, 0.3, 1, 0.5, 0.01, 0.1);
+		
+		// Apply volume
+		sig = sig * amp;
 		
 		// Final limiter
 		sig = Limiter.ar(sig, 0.9, 0.01);
@@ -327,7 +342,10 @@ s.waitForBoot({
 	s.sync; // Wait for all SynthDefs to be added
 	
 	// Start master effects
-	~masterSynth = Synth(\master, [\out, 0, \in, ~masterOut]);
+	if(~masterSynth.isNil) {
+		~masterSynth = Synth(\master, [\out, 0, \in, ~masterOut], addAction: \addToHead);
+		"Created master synth at end of initialization".postln;
+	};
 	
 	// Helper function to create emotion patterns
 	~createEmotionPattern = {|emotion, intensity|
@@ -482,13 +500,21 @@ s.waitForBoot({
 			"joy", "trust", "fear", "surprise", 
 			"sadness", "disgust", "anger", "anticipation"
 		];
+		var hasNonZeroValue = false;
 		
-		// Log incoming values
-		"Received emotion values:".postln;
+		// Log incoming values with more detail
+		"================================================".postln;
+		"RECEIVED EMOTION VALUES FROM WEB APPLICATION".postln;
+		"================================================".postln;
+		
+		// Check if any value is non-zero to help debug
 		emotionNames.do({|name, i|
 			var intensity = values[i];
 			var emotionKey = name.asSymbol; // Convert to lowercase symbol
 			var nameCapitalized;
+			
+			// Check for non-zero values
+			if(intensity > 0.01) { hasNonZeroValue = true };
 			
 			// Safe capitalization
 			nameCapitalized = name[0].toUpper ++ name[1..];
@@ -503,7 +529,37 @@ s.waitForBoot({
 			~updateEmotionPattern.value(emotionKey, intensity);
 		});
 		
+		if(hasNonZeroValue) {
+			"At least one emotion has non-zero value, sound should play".postln;
+		} {
+			"All emotion values are zero or near zero, no sound will play".postln;
+		};
+		"================================================".postln;
+		
 	}, '/warhol/entry/emotions');
+	
+	// Set up OSC responder for volume control
+	~volumeResponder = OSCdef(\volumeControl, {|msg, time, addr, recvPort|
+		var volume = msg[1];
+		
+		// Log volume message
+		"================================================".postln;
+		"RECEIVED VOLUME CONTROL FROM WEB APPLICATION".postln;
+		("Volume: " ++ volume.round(0.01)).postln;
+		"================================================".postln;
+		
+		// Apply to master synth if it exists
+		if(~masterSynth.notNil) {
+			// Scale incoming volume (0-1) to a reasonable amplitude range
+			var scaledVolume = volume.linlin(0, 1, 0, 0.9);
+			
+			// Apply to master synth
+			~masterSynth.set(\amp, scaledVolume);
+			("Master volume set to " ++ scaledVolume.round(0.01)).postln;
+		} {
+			"Cannot set volume: Master synth not found".postln;
+		};
+	}, '/warhol/volume');
 	
 	// Function to update patterns based on new emotion values
 	~updateEmotionPattern = {|emotion, intensity|
@@ -545,6 +601,14 @@ s.waitForBoot({
 	"Warhol Emotions ready! Listening for OSC messages on /warhol/entry/emotions".postln;
 	"Example command to test:\n  NetAddr(\"127.0.0.1\", 57121).sendMsg(\"/warhol/entry/emotions\", 0.5, 0.6, 0.2, 0.3, 0.4, 0.3, 0.2, 0.5);".postln;
 	"Master output bus set to: ".post; ~masterOut.postln;
+	"Master synth: ".post; ~masterSynth.postln;
+	
+	// Run test values to verify everything is working
+	AppClock.sched(1, {
+		"RUNNING AUTOMATIC TEST - YOU SHOULD HEAR SOUND".postln;
+		~testValues.value(0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.8);
+		nil; // Don't repeat
+	});
 });
 )
 

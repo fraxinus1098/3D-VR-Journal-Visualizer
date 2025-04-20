@@ -216,7 +216,6 @@ class WarholJournalViz {
       if (!this.audioSystem.initialized) {
         await this.audioSystem.initContextAndSounds({
           journalEntries: this.journalEntries,
-          camera: this.camera,
           notifications: this.notifications,
           audioControls: this.audioControls
         });
@@ -318,7 +317,7 @@ class WarholJournalViz {
     this.camera.getWorldPosition(cameraPosition);
     
     // Update audio system
-    if (this.audioSystem && this.audioSystem.audioContext && this.audioSystem.audioContext.state === 'running') {
+    if (this.audioSystem && this.audioSystem.initialized) {
       this.audioSystem.updateAudioMix(cameraPosition);
     }
     
@@ -476,12 +475,24 @@ class WarholJournalViz {
           this.orbVisualizer.highlightRelatedEntries(selectedObj);
         }
         
+        // Get the entry data for audio processing
+        const entry = selectedObj.userData.entry;
+        
+        // Send entry emotion data to the audio system
+        if (this.audioSystem && this.audioSystem.initialized) {
+          // Clone the entry data to avoid any reference issues
+          const entryCopy = this.cloneEntryData(entry);
+          // Play entry audio based on emotions
+          this.audioSystem.playEntryAudio(entryCopy);
+          // Store the entry for replay after unmuting
+          this.audioSystem.setLastSelectedEntry(entryCopy);
+        }
+        
         // Use a timeout to ensure rendering has fully completed before showing the panel
         setTimeout(() => {
           try {
             // Display the entry panel with error handling
             if (this.entryPanel) {
-              const entry = selectedObj.userData.entry;
               // Validate entry data before showing
               if (!entry.text) {
                 console.warn('Entry is missing text content:', entry);
@@ -576,6 +587,13 @@ class WarholJournalViz {
     // Clean up related entry highlighting
     if (this.orbVisualizer) {
       this.orbVisualizer.cleanupRelatedEntries();
+    }
+    
+    // Stop audio playback if using SuperCollider
+    if (this.audioSystem && this.audioSystem.initialized) {
+      if (this.audioSystem.oscBridge) {
+        this.audioSystem.oscBridge.stopAllSounds();
+      }
     }
     
     // Hide the entry panel

@@ -347,82 +347,95 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Created optimize_json.py script to remove embeddings from final JSON, significantly reducing file size
 - Embeddings not needed for visualization since UMAP coordinates are precomputed
 
-## 9. Phase 5: SuperCollider Audio Implementation (Modified Approach)
+## 9. Phase 5: SuperCollider Audio Implementation
 
-> **Note: This phase replaces the previous Web Audio API-based audio system (Phase 3.5) with a SuperCollider implementation. The existing audio files in `/public/sounds/` will be replaced with manually triggered audio from SuperCollider.**
+> **Note: This phase replaces the previous Web Audio API-based audio system (Phase 3.5) with a more sophisticated SuperCollider implementation. The existing audio files in `/public/sounds/` will be replaced with dynamically generated audio from SuperCollider.**
 
 ### Phase 5.1: SuperCollider Setup and SynthDef Creation (Estimated time: 2-3 hours)
 **Status:** Complete
 
 **Tasks:**
+- [x] Install and configure necessary libraries (osc.js)
 - [x] Create SuperCollider file with 8 emotion-based SynthDefs
 - [x] Design unique instrument characteristics for each emotion
 - [x] Implement tempo and tonal variations based on emotion values
 - [x] Test each instrument individually with varying intensity values
 
 **Key Points:**
-- Created `warholEmotions.scd` file with all necessary SynthDefs
-- Designed instruments with distinct timbral qualities for each emotion
-- Implemented parameter mapping from 0-1 intensity values to musical parameters
-- Added direct testing functions that bypass OSC for simpler local development
-- Created several test methods: `~directTestEmotionHardware`, `~superDirectTest`, etc.
-- Fixed issues with audio routing to ensure reliable sound output
+- Create a `warholEmotions.scd` file with all necessary SynthDefs
+- Design instruments with distinct timbral qualities for each emotion
+- Implement parameter mapping from 0-1 intensity values to musical parameters
+- Test with extreme values (0, 0.5, 1.0) to ensure proper scaling
+- Ensure SuperCollider server starts with sufficient resources (memory, synths)
 
-### Phase 5.2: ~~OSC Communication Interface~~ Manual Triggering Approach (Estimated time: 1-2 hours)
+### Phase 5.2: OSC Communication Interface (Estimated time: 1-2 hours)
 **Status:** Complete
 
-**Modified Approach:**
-- [x] Decided to use direct SuperCollider functions instead of OSC communication
-- [x] Implemented direct test functions for reliable audio output
-- [x] Configured SuperCollider to use the correct audio output device
-- [x] Added debugging capabilities to troubleshoot audio routing issues
-
-**Key Points:**
-- Bypassing OSC communication for simplicity and reliability
-- Will manually trigger sounds in SuperCollider when demonstrating the application
-- Created direct hardware output functions for guaranteed audio performance
-- Added detailed error reporting and debug information
-- This approach greatly simplifies the implementation while maintaining all audio capabilities
-
-### Phase 5.3: ~~Audio System Refactoring~~ Documentation & User Guide (Estimated time: 1-2 hours)
 **Tasks:**
-- [ ] Create documentation for running SuperCollider alongside the web app
-- [ ] Develop a user guide for triggering emotion sounds manually
-- [ ] Document the mapping between emotions and their sonic characteristics
-- [ ] Update project README to reflect the simplified audio approach
+- [x] Set up OSC server in SuperCollider listening on specific port
+- [x] Create OSCdef responders for emotion messages
+- [x] Implement OSC client functionality in web application
+- [x] Develop message format for sending emotion data
+- [x] Test bidirectional communication
 
 **Key Points:**
-- Document step-by-step instructions for starting both applications
-- Create a reference guide for emotion-to-sound mappings
-- Include troubleshooting tips for common audio issues
-- Explain the design decisions behind each instrument's sound characteristics
+- Configure SuperCollider to listen on local port (e.g., 57121)
+- Create JavaScript OSC client in a new `OscBridge.js` class
+- Structure messages with consistent addressing pattern (e.g., `/warhol/emotion/joy`)
+- Implement error handling for connection failures
+- Add logging to debug communication issues
+
+### Phase 5.3: Audio System Refactoring (Estimated time: 1-2 hours)
+**Status:** Complete
+
+**Tasks:**
+- [x] Modify `AudioSystem.js` to use OSC communication
+- [x] Implement emotion value transmission when entries are selected
+- [x] Add entry-specific playback functions
+- [x] Create fallback mechanism if SuperCollider connection fails
+- [x] Update AudioControls to reflect new capabilities
+- [x] Clean up or disable previous Web Audio-based functionality
+
+**Key Points:**
+- Maintain existing volume/mute controls but redirect to OSC messages
+- Redesign audio system to focus on entry selection events
+- Update `playEntryAudio(entryData)` function to extract emotion values and send via OSC
+- Create visual feedback when audio is playing through SuperCollider
+- Implement graceful connection handling with reconnect attempts
+- Comment out or remove existing code that loads and plays the audio files in `/public/sounds/`
+- Add conditional fallback to old audio system if SuperCollider connection fails
 
 ### Phase 5.4: SuperCollider Pattern Integration (Estimated time: 2-3 hours)
 **Status:** Complete
 
 **Tasks:**
-- [x] Created Pbind patterns for more complex musical structures
-- [x] Implemented dynamic pattern generation based on emotion combinations
-- [x] Added temporal evolution for sustained playback
-- [x] Fine-tuned overall mix and master effects
+- [x] Create Pbind patterns for more complex musical structures
+- [x] Implement dynamic pattern generation based on emotion combinations
+- [x] Add temporal evolution for sustained playback
+- [x] Create transition effects between different journal entries
+- [x] Fine-tune overall mix and master effects
 
 **Key Points:**
-- Used Pbind and Pattern classes for algorithmic composition
-- Created dynamic scale selection based on dominant emotions (e.g., major for joy, minor for sadness)
-- Added master effects (reverb, compression) for cohesive sound
-- Ensured clean stops when changing between emotions
+- Use Pbind and Pattern classes for algorithmic composition
+- Create dynamic scale selection based on dominant emotions (e.g., major for joy, minor for sadness)
+- Implement cross-fading between emotion states when rapidly selecting different entries
+- Add master effects (reverb, compression) for cohesive sound
+- Consider harmonic relationships between simultaneous emotion instruments
 
 ### Phase 5.5: Testing and Refinement (Estimated time: 1-2 hours)
+**Status:** Complete
+
 **Tasks:**
-- [ ] Conduct comprehensive testing with various emotion combinations
-- [ ] Optimize SuperCollider performance
-- [ ] Fine-tune instrument parameters for balance
-- [ ] Document the most effective testing functions to use
-- [ ] Create a cheat sheet of commands for quick reference during demos
+- [x] Conduct comprehensive testing with various emotion combinations
+- [x] Optimize performance for rapid entry selection
+- [x] Fine-tune instrument parameters for balance
+- [x] Create documentation for the SuperCollider implementation
+- [x] Develop startup script for easy initialization
 
 **Key Points:**
-- Document the best functions to use for testing (`~superDirectTest` recommended)
 - Test with entries having extreme emotion values to ensure proper scaling
-- Ensure clean stops when switching between emotions
-- Create quick-start guide for the simplified manual triggering approach
-- Consider creating a set of pre-defined emotion combinations for demonstrations
+- Ensure clean stops when user navigates away or closes application
+- Document OSC message format for future reference
+- Create quick-start guide for running the complete system
+- Add explanatory comments in SuperCollider code for maintainability
+- Consider creating presets for demonstration purposes

@@ -16,11 +16,13 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Enhanced error handling and resource management
 - Added JSON optimization to reduce file size by removing embeddings
 
-**Phase 5: SuperCollider Audio Implementation (Modified Approach).** We've successfully implemented SuperCollider-based audio generation:
-- Created custom instruments for each of the 8 emotions with unique sonic characteristics
-- Implemented direct testing functions for reliable audio output without OSC communication
-- Fixed audio routing issues to ensure consistent playback
-- This simplified approach allows manual triggering of emotion-based sounds while exploring the visualization
+**Phase 5: SuperCollider Audio Implementation is complete.** We've replaced the Web Audio API-based system with a more sophisticated SuperCollider implementation:
+- Implemented dynamic, algorithmic compositions based on journal entry emotion values
+- Created unique instruments for each emotion with parameterized tempo and timbre
+- Established OSC communication between the web application and SuperCollider
+- Added volume control via OSC messages
+- Simplified the AudioSystem class to focus exclusively on OSC communication
+- Enhanced error handling and diagnostic capabilities
 
 ## Setup
 
@@ -29,7 +31,7 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 - Node.js (v14+)
 - npm (v6+)
 - A WebXR-compatible device (like Oculus Quest 3) or browser for testing
-- SuperCollider (v3.13+) - required for Phase 5 audio features
+- SuperCollider (v3.13+) - required for audio features
 
 ### Installation
 
@@ -40,30 +42,32 @@ This application analyzes approximately 2,000 journal entries from "The Andy War
 npm install
 ```
 
-3. Start the development server:
+3. Start the SuperCollider server:
+   - Open SuperCollider
+   - Open the file `supercollider/warholEmotions.scd`
+   - Execute the script (select all and press Ctrl+Enter or Cmd+Enter)
+   - Confirm that the server booted successfully in the Post window
 
+4. Start the WebSocket-OSC bridge:
+```bash
+npm run bridge
+```
+
+5. Start the development server:
 ```bash
 npm run dev
 ```
 
-4. For non-VR testing:
-   - Open the development server URL in your browser
-   - Use keyboard and mouse controls to navigate the environment
+6. For VR testing:
+   - Connect your Oculus Quest 3 to the same network as your development machine
+   - Navigate to the development server URL on the Quest browser
+   - Click the VR button to enter immersive mode
 
-5. For SuperCollider audio:
-   - Start the SuperCollider application
-   - Open and run the `warholEmotions.scd` file (evaluate the first large code block)
-   - Use the `~superDirectTest.value("emotion", intensity)` function to trigger sounds
-   - Example: `~superDirectTest.value("joy", 0.8)` or `~superDirectTest.value("sadness", 0.7)`
-
-## Running the Applications Together
-
-1. Start the web application with `npm run dev`
-2. Start SuperCollider and open `warholEmotions.scd`
-3. Evaluate the main code block in SuperCollider (select it and press Ctrl+Enter)
-4. Navigate the 3D environment in your browser
-5. As you explore and select journal entries in the web app, manually trigger corresponding emotions in SuperCollider
-6. For example, if you select an entry with high joy, run `~superDirectTest.value("joy", 0.8)` in SuperCollider
+7. Audio Testing:
+   - Select a journal entry orb to trigger SuperCollider audio
+   - The application will automatically connect to SuperCollider via the bridge
+   - If you see "SuperCollider audio connected via WebSocket!" notification, the connection is working
+   - Each journal entry's emotion values will control the audio mix in real-time
 
 ## Project Structure
 
@@ -73,12 +77,8 @@ npm run dev
 │   ├── data/
 │   │   ├── warhol_final.json   # Final processed data for visualization (large file)
 │   │   ├── warhol_final_optimized.json # Size-optimized data without embeddings
-│   │   ├── sample.json         # Smaller sample data for testing
-│   │   └── .gitattributes      # Git LFS configuration for large data file
-│   └── sounds/                 # Background audio loops for emotions (legacy)
-│       ├── 1 - Joy.mp3
-│       ├── ... (8 files total)
-│       └── 8 - Anticipation.mp3
+│   │   └── sample.json         # Smaller sample data for testing
+│   └── sounds/                 # (No longer used - replaced by SuperCollider)
 ├── src/                        # Source code for the WebXR application
 │   ├── controllers/
 │   │   ├── DesktopControls.js  # Handles keyboard/mouse navigation
@@ -89,15 +89,16 @@ npm run dev
 │   │   ├── Minimap.js          # Renders a 2D minimap of the 3D space
 │   │   └── Notifications.js    # Handles displaying in-app messages
 │   ├── utils/
-│   │   ├── AudioSystem.js      # Manages audio (Web Audio API implementation)
+│   │   ├── AudioSystem.js      # OSC communication with SuperCollider
+│   │   ├── OscBridge.js        # WebSocket-OSC bridge communication
 │   │   ├── InteractionManager.js # Handles raycasting and object selection
 │   │   └── data-loader.js      # Loads the main journal data
 │   ├── visualizers/
 │   │   └── OrbVisualizer.js    # Creates and manages the 3D orbs representing entries
 │   └── main.js                 # Main application entry point, initializes Three.js/WebXR
 ├── supercollider/              # SuperCollider files for audio generation
-│   ├── warholEmotions.scd      # SuperCollider definitions for emotional instruments
-│   └── README.md               # Specific instructions for SuperCollider setup
+│   ├── warholEmotions.scd      # SuperCollider synthesis engine for emotion-based audio
+│   └── README.md               # Instructions for SuperCollider setup
 ├── data_processing/            # Python scripts for data extraction & NLP (Runs locally)
 │   ├── extract_text.py         # Extracts text from PDF
 │   ├── parse_entries.py        # Parses text into structured journal entries
@@ -126,6 +127,7 @@ npm run dev
 - Three.js and WebXR for 3D visualization
 - Vite for fast development
 - SuperCollider for algorithmic audio composition
+- osc.js and WebSockets for Open Sound Control communication
 - **Data Processing:**
   - Python
   - pdfplumber
