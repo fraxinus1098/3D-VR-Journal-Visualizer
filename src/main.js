@@ -539,15 +539,75 @@ class WarholJournalViz {
    */
   cloneEntryData(entry) {
     try {
+      console.log('=== CLONING ENTRY DATA ===');
+      console.log('Original entry data:', entry);
+      console.log('Original emotions:', entry.emotions);
+      
+      // Check if emotions exist and are in the expected format
+      if (!entry.emotions) {
+        console.warn('Entry is missing emotions data!');
+      } else {
+        console.log('Original emotions structure:', JSON.stringify(entry.emotions));
+      }
+      
+      // Create the base clone
       const cloned = {
         id: entry.id,
         date: entry.date,
         text: entry.text,
         location: entry.location,
         topics: Array.isArray(entry.topics) ? [...entry.topics] : [],
-        emotions: entry.emotions ? {...entry.emotions} : {},
+        emotions: {},
         entities: {}
       };
+      
+      // Handle emotions with special care to ensure values are numbers
+      if (entry.emotions) {
+        cloned.emotions = {};
+        
+        // Define both lowercase and capitalized emotion names
+        const emotionPairs = [
+          {lower: 'joy', upper: 'Joy'},
+          {lower: 'trust', upper: 'Trust'},
+          {lower: 'fear', upper: 'Fear'},
+          {lower: 'surprise', upper: 'Surprise'},
+          {lower: 'sadness', upper: 'Sadness'},
+          {lower: 'disgust', upper: 'Disgust'},
+          {lower: 'anger', upper: 'Anger'},
+          {lower: 'anticipation', upper: 'Anticipation'}
+        ];
+        
+        // Look for each emotion in both lowercase and uppercase forms
+        emotionPairs.forEach(pair => {
+          const lowerName = pair.lower;
+          const upperName = pair.upper;
+          
+          // Check lowercase version first
+          if (lowerName in entry.emotions) {
+            const value = parseFloat(entry.emotions[lowerName]);
+            cloned.emotions[lowerName] = isNaN(value) ? 0 : Math.min(1, Math.max(0, value));
+            console.log(`Found lowercase emotion: ${lowerName} = ${cloned.emotions[lowerName]}`);
+          } 
+          // Then check uppercase version
+          else if (upperName in entry.emotions) {
+            const value = parseFloat(entry.emotions[upperName]);
+            cloned.emotions[lowerName] = isNaN(value) ? 0 : Math.min(1, Math.max(0, value));
+            console.log(`Found capitalized emotion: ${upperName} = ${cloned.emotions[lowerName]}`);
+          } 
+          // If neither exists, default to 0
+          else {
+            cloned.emotions[lowerName] = 0;
+            console.warn(`No match for emotion ${lowerName}/${upperName} in entry ${entry.id}, defaulting to 0`);
+          }
+        });
+      } else {
+        // If no emotions data, create with zeros
+        cloned.emotions = {
+          joy: 0, trust: 0, fear: 0, surprise: 0,
+          sadness: 0, disgust: 0, anger: 0, anticipation: 0
+        };
+        console.warn('Entry has no emotions data, using zeros for all emotions');
+      }
       
       // Clone entities if they exist
       if (entry.entities) {
@@ -565,6 +625,9 @@ class WarholJournalViz {
       if (Array.isArray(entry.relatedEntries)) {
         cloned.relatedEntries = [...entry.relatedEntries];
       }
+      
+      console.log('Cloned emotions:', cloned.emotions);
+      console.log('=== END CLONING ===');
       
       return cloned;
     } catch (error) {

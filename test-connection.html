@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebSocket Connection Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+    .warning {
+      color: orange;
+      font-weight: bold;
+    }
+    #log {
+      background-color: #f5f5f5;
+      border: 1px solid #ddd;
+      padding: 10px;
+      height: 300px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    h2 {
+      margin-top: 30px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>WebSocket Connection Test</h1>
+  <p>This page tests the connection to the WebSocket-OSC bridge server. Use this to diagnose connection issues with your audio system.</p>
+  
+  <button id="testConnection">Test Connection</button>
+  <button id="sendTestMessage">Send Test Message</button>
+  <button id="clearLog">Clear Log</button>
+  
+  <div id="log"></div>
+  
+  <h2>Troubleshooting Steps</h2>
+  <ol>
+    <li>Make sure the bridge server is running:
+      <pre>npm run bridge</pre>
+    </li>
+    <li>Check if the server is listening on port 8080</li>
+    <li>Verify that no firewall is blocking the connection</li>
+    <li>Try using an explicit IP address instead of localhost</li>
+  </ol>
+  
+  <h2>Common Issues</h2>
+  <ul>
+    <li><strong>Connection Refused</strong>: Bridge server not running or wrong port</li>
+    <li><strong>Connection Timeout</strong>: Firewall blocking connection or server not responding</li>
+    <li><strong>Server not receiving messages</strong>: Check the terminal where the bridge server is running</li>
+  </ul>
+  
+  <script>
+    const logElement = document.getElementById('log');
+    let socket = null;
+    
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.className = type;
+      entry.textContent = `[${timestamp}] ${message}`;
+      logElement.appendChild(entry);
+      logElement.scrollTop = logElement.scrollHeight;
+    }
+    
+    function testConnection() {
+      // Close any existing connection
+      if (socket) {
+        socket.close();
+        socket = null;
+      }
+      
+      log('Testing connection to ws://localhost:8080...');
+      
+      try {
+        socket = new WebSocket('ws://localhost:8080');
+        
+        // Add a timeout to detect stalled connections
+        const connectionTimeout = setTimeout(() => {
+          if (socket && socket.readyState === WebSocket.CONNECTING) {
+            log('Connection attempt stalled - this may indicate a firewall or network issue', 'warning');
+            socket.close();
+          }
+        }, 5000);
+        
+        socket.addEventListener('open', (event) => {
+          clearTimeout(connectionTimeout);
+          log('Successfully connected to WebSocket server!', 'success');
+          log(`WebSocket readyState: ${socket.readyState} (OPEN=${WebSocket.OPEN})`);
+        });
+        
+        socket.addEventListener('message', (event) => {
+          log(`Received message: ${event.data}`, 'success');
+          try {
+            const data = JSON.parse(event.data);
+            log(`Parsed message: ${JSON.stringify(data, null, 2)}`, 'success');
+          } catch (e) {
+            log(`Could not parse message as JSON: ${e.message}`, 'warning');
+          }
+        });
+        
+        socket.addEventListener('close', (event) => {
+          clearTimeout(connectionTimeout);
+          log(`Connection closed with code ${event.code} and reason "${event.reason}"`, 
+               event.code === 1000 ? 'info' : 'error');
+          log('Common close codes: 1000=Normal, 1001=GoingAway, 1006=Abnormal, 1011=Server Error');
+          socket = null;
+        });
+        
+        socket.addEventListener('error', (event) => {
+          clearTimeout(connectionTimeout);
+          log('Connection error - see console for details', 'error');
+          log('Common issues include:', 'error');
+          log('- Bridge server not running (start with npm run bridge)', 'error');
+          log('- Port 8080 is in use by another application', 'error');
+          log('- Network/firewall blocking WebSocket connections', 'error');
+          socket = null;
+        });
+        
+      } catch (error) {
+        log(`Error creating WebSocket: ${error.message}`, 'error');
+      }
+    }
+    
+    function sendTestMessage() {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        log('Cannot send message - no open connection', 'error');
+        return;
+      }
+      
+      try {
+        const testMessage = {
+          address: "/warhol/entry/emotions",
+          values: [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+        };
+        
+        log(`Sending test message: ${JSON.stringify(testMessage)}`);
+        socket.send(JSON.stringify(testMessage));
+        log('Message sent!', 'success');
+      } catch (error) {
+        log(`Error sending message: ${error.message}`, 'error');
+      }
+    }
+    
+    document.getElementById('testConnection').addEventListener('click', testConnection);
+    document.getElementById('sendTestMessage').addEventListener('click', sendTestMessage);
+    document.getElementById('clearLog').addEventListener('click', () => {
+      logElement.innerHTML = '';
+    });
+    
+    // Browser info
+    log('Browser WebSocket support:');
+    log(`WebSocket available: ${typeof WebSocket !== 'undefined'}`);
+    log(`WebSocket version: ${WebSocket.CLOSING !== undefined ? 'Modern' : 'Legacy'}`);
+  </script>
+</body>
+</html> 

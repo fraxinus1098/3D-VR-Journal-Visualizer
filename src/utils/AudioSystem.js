@@ -34,18 +34,19 @@ class AudioSystem {
     
     try {
       console.log('AudioSystem: Connecting to SuperCollider via WebSocket-OSC bridge...');
+      console.log('AudioSystem: Ensure the bridge server is running with "npm run bridge" in a separate terminal');
       
       // Try to connect to SuperCollider via WebSocket-OSC bridge
       try {
         // Wrap with a timeout to prevent blocking if connection fails
         const connectPromise = this.oscBridge.connect();
         
-        // Set a timeout for the connection attempt
+        // Set a timeout for the connection attempt - increased to 5 seconds
         const timeoutPromise = new Promise(resolve => {
           setTimeout(() => {
-            console.warn('AudioSystem: WebSocket connection timeout');
+            console.warn('AudioSystem: WebSocket connection timeout after 5 seconds');
             resolve(false);
-          }, 3000); // 3 second timeout
+          }, 5000); // 5 second timeout (increased from 3s)
         });
         
         // Race the connect promise against the timeout
@@ -61,10 +62,17 @@ class AudioSystem {
           this.sendTestEmotions(0.1);
         } else {
           console.warn('AudioSystem: WebSocket-OSC bridge connection failed or timed out');
-          console.warn('SuperCollider connection unavailable - audio features will be limited');
+          console.warn('IMPORTANT: To enable audio, make sure to:');
+          console.warn('1. Run "npm run bridge" in a separate terminal');
+          console.warn('2. Have SuperCollider running with warholEmotions.scd loaded');
+          console.warn('3. Then reload this page');
         }
       } catch (oscError) {
         console.error('AudioSystem: Error connecting to WebSocket-OSC bridge:', oscError);
+        console.error('IMPORTANT: To enable audio, make sure to:');
+        console.error('1. Run "npm run bridge" in a separate terminal');
+        console.error('2. Have SuperCollider running with warholEmotions.scd loaded');
+        console.error('3. Then reload this page');
       }
       
       this.initialized = true;
@@ -158,11 +166,52 @@ class AudioSystem {
       return false;
     }
     
+    // Check if OSC bridge is actually connected
+    if (!this.oscBridge || !this.oscBridge.connected) {
+      console.warn('Cannot play entry audio: No connection to OSC bridge');
+      console.warn('To enable audio:');
+      console.warn('1. Run "npm run bridge" in a separate terminal');
+      console.warn('2. Have SuperCollider running with warholEmotions.scd loaded');
+      console.warn('3. Reload the page');
+      return false;
+    }
+    
     // Check if we have emotion data
     if (!entryData || !entryData.emotions) {
       console.error('Cannot play entry audio: No emotion data in entry', entryData);
       return false;
     }
+    
+    // ===== ADDED DETAILED EMOTION DEBUGGING =====
+    console.log('===== DETAILED EMOTION DEBUGGING =====');
+    console.log('Entry ID:', entryData.id);
+    console.log('Complete entry object:', entryData);
+    console.log('Emotions object type:', typeof entryData.emotions);
+    console.log('Is emotions an object?', entryData.emotions instanceof Object);
+    console.log('Emotions keys:', Object.keys(entryData.emotions));
+    
+    // Check each expected emotion property
+    const expectedEmotions = ['joy', 'trust', 'fear', 'surprise', 'sadness', 'disgust', 'anger', 'anticipation'];
+    console.log('Checking individual emotion properties:');
+    let allZeros = true;
+    
+    expectedEmotions.forEach(emotion => {
+      const value = parseFloat(entryData.emotions[emotion] || 0);
+      console.log(`- ${emotion}: ${entryData.emotions[emotion]} (parsed: ${value})`);
+      
+      // Check if at least one value is non-zero
+      if (value > 0) {
+        allZeros = false;
+      }
+    });
+    
+    console.log('All emotion values are zero?', allZeros);
+    
+    if (allZeros) {
+      console.warn('WARNING: All emotion values are zero. This may indicate missing or invalid data.');
+      console.warn('Check the journal entry data source and format.');
+    }
+    // ===== END ADDED DEBUGGING =====
     
     // Skip if muted
     if (this.muted) {
@@ -281,18 +330,28 @@ class AudioSystem {
             if (this.oscBridge && this.oscBridge.connected) {
               notifications.show('SuperCollider audio connected via WebSocket!');
             } else {
-              notifications.show('SuperCollider connection failed - no audio available');
+              notifications.show('Audio connection failed - requires bridge server');
               
               // Add a delayed second notification explaining how to fix
               setTimeout(() => {
-                notifications.show('For audio, run SuperCollider and bridge server as explained in README');
-              }, 5000);
+                notifications.show('Run "npm run bridge" in terminal & reload page for audio');
+              }, 3000);
+              
+              // Add a third notification for SuperCollider
+              setTimeout(() => {
+                notifications.show('Also ensure SuperCollider is running with warholEmotions.scd');
+              }, 6000);
             }
           }
         } catch (innerError) {
           console.error('Error during audio initialization:', innerError);
           if (notifications) {
-            notifications.show('Audio initialization failed, but app will continue');
+            notifications.show('Audio initialization failed - see console for details');
+            
+            // Add delayed instructions
+            setTimeout(() => {
+              notifications.show('For audio: Run "npm run bridge" in terminal & reload page');
+            }, 3000);
           }
         }
       }, 100); // short delay to ensure UI loads first
