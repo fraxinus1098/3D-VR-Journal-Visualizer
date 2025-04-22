@@ -352,14 +352,12 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 > **Note: This phase replaces the previous Web Audio API-based audio system (Phase 3.5) with a more sophisticated SuperCollider implementation. The existing audio files in `/public/sounds/` will be replaced with dynamically generated audio from SuperCollider.**
 
 ### Phase 5.1: SuperCollider Setup and SynthDef Creation (Estimated time: 2-3 hours)
-**Status:** Complete
-
 **Tasks:**
-- [x] Install and configure necessary libraries (osc.js)
-- [x] Create SuperCollider file with 8 emotion-based SynthDefs
-- [x] Design unique instrument characteristics for each emotion
-- [x] Implement tempo and tonal variations based on emotion values
-- [x] Test each instrument individually with varying intensity values
+- [ ] Install and configure necessary libraries (osc.js)
+- [ ] Create SuperCollider file with 8 emotion-based SynthDefs
+- [ ] Design unique instrument characteristics for each emotion
+- [ ] Implement tempo and tonal variations based on emotion values
+- [ ] Test each instrument individually with varying intensity values
 
 **Key Points:**
 - Create a `warholEmotions.scd` file with all necessary SynthDefs
@@ -369,14 +367,12 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Ensure SuperCollider server starts with sufficient resources (memory, synths)
 
 ### Phase 5.2: OSC Communication Interface (Estimated time: 1-2 hours)
-**Status:** Complete
-
 **Tasks:**
-- [x] Set up OSC server in SuperCollider listening on specific port
-- [x] Create OSCdef responders for emotion messages
-- [x] Implement OSC client functionality in web application
-- [x] Develop message format for sending emotion data
-- [x] Test bidirectional communication
+- [ ] Set up OSC server in SuperCollider listening on specific port
+- [ ] Create OSCdef responders for emotion messages
+- [ ] Implement OSC client functionality in web application
+- [ ] Develop message format for sending emotion data
+- [ ] Test bidirectional communication
 
 **Key Points:**
 - Configure SuperCollider to listen on local port (e.g., 57121)
@@ -386,15 +382,13 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Add logging to debug communication issues
 
 ### Phase 5.3: Audio System Refactoring (Estimated time: 1-2 hours)
-**Status:** Complete
-
 **Tasks:**
-- [x] Modify `AudioSystem.js` to use OSC communication
-- [x] Implement emotion value transmission when entries are selected
-- [x] Add entry-specific playback functions
-- [x] Create fallback mechanism if SuperCollider connection fails
-- [x] Update AudioControls to reflect new capabilities
-- [x] Clean up or disable previous Web Audio-based functionality
+- [ ] Modify `AudioSystem.js` to use OSC communication
+- [ ] Implement emotion value transmission when entries are selected
+- [ ] Add entry-specific playback functions
+- [ ] Create fallback mechanism if SuperCollider connection fails
+- [ ] Update AudioControls to reflect new capabilities
+- [ ] Clean up or disable previous Web Audio-based functionality
 
 **Key Points:**
 - Maintain existing volume/mute controls but redirect to OSC messages
@@ -406,14 +400,12 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Add conditional fallback to old audio system if SuperCollider connection fails
 
 ### Phase 5.4: SuperCollider Pattern Integration (Estimated time: 2-3 hours)
-**Status:** Complete
-
 **Tasks:**
-- [x] Create Pbind patterns for more complex musical structures
-- [x] Implement dynamic pattern generation based on emotion combinations
-- [x] Add temporal evolution for sustained playback
-- [x] Create transition effects between different journal entries
-- [x] Fine-tune overall mix and master effects
+- [ ] Create Pbind patterns for more complex musical structures
+- [ ] Implement dynamic pattern generation based on emotion combinations
+- [ ] Add temporal evolution for sustained playback
+- [ ] Create transition effects between different journal entries
+- [ ] Fine-tune overall mix and master effects
 
 **Key Points:**
 - Use Pbind and Pattern classes for algorithmic composition
@@ -423,14 +415,12 @@ This project creates an immersive WebXR experience visualizing Andy Warhol's jou
 - Consider harmonic relationships between simultaneous emotion instruments
 
 ### Phase 5.5: Testing and Refinement (Estimated time: 1-2 hours)
-**Status:** Complete
-
 **Tasks:**
-- [x] Conduct comprehensive testing with various emotion combinations
-- [x] Optimize performance for rapid entry selection
-- [x] Fine-tune instrument parameters for balance
-- [x] Create documentation for the SuperCollider implementation
-- [x] Develop startup script for easy initialization
+- [ ] Conduct comprehensive testing with various emotion combinations
+- [ ] Optimize performance for rapid entry selection
+- [ ] Fine-tune instrument parameters for balance
+- [ ] Create documentation for the SuperCollider implementation
+- [ ] Develop startup script for easy initialization
 
 **Key Points:**
 - Test with entries having extreme emotion values to ensure proper scaling

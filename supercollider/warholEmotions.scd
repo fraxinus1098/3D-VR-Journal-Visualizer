@@ -321,7 +321,7 @@ s.waitForBoot({
 	}).add;
 	
 	// Master effect synth (reverb, compression)
-	SynthDef(\master, {|out=0, in=0, amp=0.7|
+	SynthDef(\master, {|out=0, in=0|
 		var sig = In.ar(in, 2);
 		
 		// Apply effects
@@ -329,9 +329,6 @@ s.waitForBoot({
 		
 		// Multi-band compression
 		sig = Compander.ar(sig, sig, 0.3, 1, 0.5, 0.01, 0.1);
-		
-		// Apply volume
-		sig = sig * amp;
 		
 		// Final limiter
 		sig = Limiter.ar(sig, 0.9, 0.01);
@@ -537,29 +534,6 @@ s.waitForBoot({
 		"================================================".postln;
 		
 	}, '/warhol/entry/emotions');
-	
-	// Set up OSC responder for volume control
-	~volumeResponder = OSCdef(\volumeControl, {|msg, time, addr, recvPort|
-		var volume = msg[1];
-		
-		// Log volume message
-		"================================================".postln;
-		"RECEIVED VOLUME CONTROL FROM WEB APPLICATION".postln;
-		("Volume: " ++ volume.round(0.01)).postln;
-		"================================================".postln;
-		
-		// Apply to master synth if it exists
-		if(~masterSynth.notNil) {
-			// Scale incoming volume (0-1) to a reasonable amplitude range
-			var scaledVolume = volume.linlin(0, 1, 0, 0.9);
-			
-			// Apply to master synth
-			~masterSynth.set(\amp, scaledVolume);
-			("Master volume set to " ++ scaledVolume.round(0.01)).postln;
-		} {
-			"Cannot set volume: Master synth not found".postln;
-		};
-	}, '/warhol/volume');
 	
 	// Function to update patterns based on new emotion values
 	~updateEmotionPattern = {|emotion, intensity|
