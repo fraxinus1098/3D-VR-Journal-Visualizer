@@ -156,6 +156,127 @@ class AudioSystem {
   }
   
   /**
+   * Initialize audio after user interaction
+   * This method ensures we don't block the main application loading sequence
+   */
+  async initContextAndSounds({ journalEntries, notifications, audioControls }) {
+    try {
+      // Use a timeout to ensure the application UI is loaded first
+      setTimeout(async () => {
+        try {
+          await this.init();
+          
+          // Calculate emotion centers for spatial reference
+          if (journalEntries && journalEntries.length > 0) {
+            this.calculateEmotionCenters(journalEntries);
+          }
+          
+          // We don't need to call setAudioSystem since AudioControls already has a reference
+          // from its constructor. Attempting to call the non-existent method causes warnings.
+          
+          // Show status notification about audio
+          if (notifications) {
+            if (this.oscBridge && this.oscBridge.connected) {
+              notifications.show('SuperCollider audio connected via WebSocket!');
+            } else {
+              notifications.show('Audio connection failed - requires bridge server');
+              
+              // Add a delayed second notification explaining how to fix
+              setTimeout(() => {
+                notifications.show('Run "npm run bridge" in terminal & reload page for audio');
+              }, 3000);
+              
+              // Add a third notification for SuperCollider
+              setTimeout(() => {
+                notifications.show('Also ensure SuperCollider is running with warholEmotions.scd');
+              }, 6000);
+            }
+          }
+        } catch (innerError) {
+          console.error('Error during audio initialization:', innerError);
+          if (notifications) {
+            notifications.show('Audio initialization failed - see console for details');
+            
+            // Add delayed instructions
+            setTimeout(() => {
+              notifications.show('For audio: Run "npm run bridge" in terminal & reload page');
+            }, 3000);
+          }
+        }
+      }, 100); // short delay to ensure UI loads first
+      
+      // Return immediately so we don't block loading
+      return Promise.resolve(true);
+    } catch (error) {
+      console.error('Error initializing audio:', error);
+      
+      // Even if we fail, don't block the application
+      return Promise.resolve(false);
+    }
+  }
+  
+  /**
+   * Send test emotion values to SuperCollider (diagnostic function)
+   * @param {number} [intensity=0.7] - Intensity value for test (0-1)
+   * @returns {boolean} Success of test
+   */
+  sendTestEmotions(intensity = 0.7) {
+    console.log(`AudioSystem: Sending test emotions with intensity ${intensity}`);
+    
+    if (!this.initialized) {
+      console.error('Cannot send test: Audio system not initialized');
+      return false;
+    }
+    
+    // Create test emotions with varying values
+    const testEmotions = {
+      joy: intensity,
+      trust: intensity * 0.8,
+      fear: intensity * 0.6,
+      surprise: intensity * 0.7,
+      sadness: intensity * 0.4,
+      disgust: intensity * 0.3,
+      anger: intensity * 0.5,
+      anticipation: intensity * 0.9
+    };
+    
+    console.log('Test emotion values:', testEmotions);
+    
+    // Send via OSC bridge
+    if (this.oscBridge) {
+      console.log('Sending test via OSC bridge');
+      return this.oscBridge.sendEmotionValues(testEmotions);
+    }
+    
+    return false;
+  }
+  
+  /**
+   * Set the last selected entry for replay after unmuting
+   * @param {Object} entry - The journal entry that was selected
+   */
+  setLastSelectedEntry(entry) {
+    this.lastSelectedEntry = entry;
+  }
+  
+  /**
+   * Play a selection interaction sound (placeholder for compatibility)
+   * No implementation needed with SuperCollider - kept for compatibility
+   */
+  playSelectSound() {
+    // No implementation needed - kept for compatibility with existing code
+    console.log('Selection sound triggered (no-op)');
+  }
+  
+  /**
+   * Play a hover interaction sound (placeholder for compatibility)
+   * No implementation needed with SuperCollider - kept for compatibility
+   */
+  playHoverSound() {
+    // No implementation needed - kept for compatibility with existing code
+  }
+  
+  /**
    * Play entry audio based on emotion values
    * @param {Object} entryData - The journal entry data
    * @returns {boolean} Success of playback initiation
@@ -181,6 +302,9 @@ class AudioSystem {
       console.error('Cannot play entry audio: No emotion data in entry', entryData);
       return false;
     }
+    
+    // Important: First stop any previous sounds to prevent SuperCollider resource exhaustion
+    this.stopAllSounds();
     
     // ===== ADDED DETAILED EMOTION DEBUGGING =====
     console.log('===== DETAILED EMOTION DEBUGGING =====');
@@ -305,126 +429,147 @@ class AudioSystem {
   }
   
   /**
-   * Initialize audio after user interaction
-   * This method ensures we don't block the main application loading sequence
+   * Stop all currently playing sounds
+   * This helps prevent SuperCollider from running out of resources
    */
-  async initContextAndSounds({ journalEntries, notifications, audioControls }) {
-    try {
-      // Use a timeout to ensure the application UI is loaded first
-      setTimeout(async () => {
-        try {
-          await this.init();
-          
-          // Calculate emotion centers for spatial reference
-          if (journalEntries && journalEntries.length > 0) {
-            this.calculateEmotionCenters(journalEntries);
-          }
-          
-          // Register this audio system with the UI controls
-          if (audioControls) {
-            audioControls.setAudioSystem(this);
-          }
-          
-          // Show status notification about audio
-          if (notifications) {
+  stopAllSounds() {
             if (this.oscBridge && this.oscBridge.connected) {
-              notifications.show('SuperCollider audio connected via WebSocket!');
-            } else {
-              notifications.show('Audio connection failed - requires bridge server');
-              
-              // Add a delayed second notification explaining how to fix
-              setTimeout(() => {
-                notifications.show('Run "npm run bridge" in terminal & reload page for audio');
-              }, 3000);
-              
-              // Add a third notification for SuperCollider
-              setTimeout(() => {
-                notifications.show('Also ensure SuperCollider is running with warholEmotions.scd');
-              }, 6000);
-            }
-          }
-        } catch (innerError) {
-          console.error('Error during audio initialization:', innerError);
-          if (notifications) {
-            notifications.show('Audio initialization failed - see console for details');
-            
-            // Add delayed instructions
-            setTimeout(() => {
-              notifications.show('For audio: Run "npm run bridge" in terminal & reload page');
-            }, 3000);
-          }
-        }
-      }, 100); // short delay to ensure UI loads first
+      console.log('AudioSystem: Stopping all previous sounds before playing new ones');
+      this.oscBridge.stopAllSounds();
       
-      // Return immediately so we don't block loading
-      return Promise.resolve(true);
-    } catch (error) {
-      console.error('Error initializing audio:', error);
-      
-      // Even if we fail, don't block the application
-      return Promise.resolve(false);
+      // Add a small delay to give SuperCollider time to free resources
+      // This helps prevent "out of real time memory" errors
+      return new Promise(resolve => setTimeout(resolve, 50));
     }
+    return Promise.resolve();
   }
   
   /**
-   * Send test emotion values to SuperCollider (diagnostic function)
-   * @param {number} [intensity=0.7] - Intensity value for test (0-1)
-   * @returns {boolean} Success of test
+   * Sends emotion values to SuperCollider through OSC
+   * 
+   * @param {Object} emotions - Object containing emotion values
+   * @returns {boolean} - True if successful, false if bridge not connected
    */
-  sendTestEmotions(intensity = 0.7) {
-    console.log(`AudioSystem: Sending test emotions with intensity ${intensity}`);
-    
-    if (!this.initialized) {
-      console.error('Cannot send test: Audio system not initialized');
+  sendEmotionValues(emotions) {
+    if (!this.oscBridge || !this.oscBridge.connected) {
+      console.warn('AudioSystem: Cannot send emotion values - bridge not connected');
       return false;
     }
     
-    // Create test emotions with varying values
-    const testEmotions = {
-      joy: intensity,
-      trust: intensity * 0.8,
-      fear: intensity * 0.6,
-      surprise: intensity * 0.7,
-      sadness: intensity * 0.4,
-      disgust: intensity * 0.3,
-      anger: intensity * 0.5,
-      anticipation: intensity * 0.9
-    };
-    
-    console.log('Test emotion values:', testEmotions);
-    
-    // Send via OSC bridge
-    if (this.oscBridge) {
-      console.log('Sending test via OSC bridge');
-      return this.oscBridge.sendEmotionValues(testEmotions);
+    try {
+      // Normalize the emotions object to ensure we get all values regardless of case
+      const normalizedEmotions = this.normalizeEmotions(emotions);
+      
+      // Extract emotion values with proper fallbacks
+      const joyValue = normalizedEmotions.joy || 0;
+      const sadnessValue = normalizedEmotions.sadness || 0;
+      const angerValue = normalizedEmotions.anger || 0;
+      const fearValue = normalizedEmotions.fear || 0;
+      const disgustValue = normalizedEmotions.disgust || 0;
+      const surpriseValue = normalizedEmotions.surprise || 0;
+      const anticipationValue = normalizedEmotions.anticipation || 0;
+      const trustValue = normalizedEmotions.trust || 0;
+      
+      // Check for all-zero values which indicates a potential issue
+      const sum = joyValue + sadnessValue + angerValue + fearValue + 
+                  disgustValue + surpriseValue + anticipationValue + trustValue;
+      
+      if (sum === 0) {
+        console.warn('AudioSystem: All emotion values are zero - this may indicate missing data');
+        console.warn('AudioSystem: Original emotions object:', emotions);
+        console.warn('AudioSystem: Normalized emotions object:', normalizedEmotions);
+      }
+      
+      // Log the emotion values we're sending
+      console.log('AudioSystem: Sending emotion values to SuperCollider:');
+      console.log(`  - Joy: ${joyValue.toFixed(2)}`);
+      console.log(`  - Sadness: ${sadnessValue.toFixed(2)}`);
+      console.log(`  - Anger: ${angerValue.toFixed(2)}`);
+      console.log(`  - Fear: ${fearValue.toFixed(2)}`);
+      console.log(`  - Disgust: ${disgustValue.toFixed(2)}`);
+      console.log(`  - Surprise: ${surpriseValue.toFixed(2)}`);
+      console.log(`  - Anticipation: ${anticipationValue.toFixed(2)}`);
+      console.log(`  - Trust: ${trustValue.toFixed(2)}`);
+      
+      // Send the emotion values to SuperCollider via OSC
+      const oscMessage = {
+        address: "/warhol/entry/emotions",
+        values: [
+          joyValue,
+          sadnessValue,
+          angerValue,
+          fearValue,
+          disgustValue,
+          surpriseValue,
+          anticipationValue,
+          trustValue
+        ]
+      };
+      
+      this.oscBridge.socket.send(JSON.stringify(oscMessage));
+      
+      // Track that we've sent a message
+      this.lastOscSentTime = Date.now();
+      
+      return true;
+    } catch (error) {
+      console.error('AudioSystem: Error sending emotion values:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Normalizes emotion object to handle different case formats
+   * 
+   * @param {Object} emotions - Original emotions object
+   * @returns {Object} - Normalized emotions object with lowercase keys
+   */
+  normalizeEmotions(emotions) {
+    if (!emotions) {
+      console.warn('AudioSystem: Emotions object is null or undefined');
+      return {
+        joy: 0, sadness: 0, anger: 0, fear: 0,
+        disgust: 0, surprise: 0, anticipation: 0, trust: 0
+      };
     }
     
-    return false;
-  }
-  
-  /**
-   * Set the last selected entry for replay after unmuting
-   * @param {Object} entry - The journal entry that was selected
-   */
-  setLastSelectedEntry(entry) {
-    this.lastSelectedEntry = entry;
-  }
-  
-  /**
-   * Play a selection interaction sound (placeholder for compatibility)
-   * No implementation needed with SuperCollider - kept for compatibility
-   */
-  playSelectSound() {
-    // No implementation needed - kept for compatibility with existing code
-    console.log('Selection sound triggered (no-op)');
-  }
-  
-  /**
-   * Play a hover interaction sound (placeholder for compatibility)
-   * No implementation needed with SuperCollider - kept for compatibility
-   */
-  playHoverSound() {
-    // No implementation needed - kept for compatibility with existing code
+    // Create a new object with all lowercase keys
+    const normalized = {};
+    
+    // List of emotion names we're looking for
+    const emotionNames = [
+      'joy', 'sadness', 'anger', 'fear',
+      'disgust', 'surprise', 'anticipation', 'trust'
+    ];
+    
+    // Check for each emotion in various case formats
+    emotionNames.forEach(emotion => {
+      // Try lowercase version (e.g., "joy")
+      if (typeof emotions[emotion] === 'number') {
+        normalized[emotion] = emotions[emotion];
+      }
+      // Try uppercase version (e.g., "Joy")
+      else if (typeof emotions[emotion.charAt(0).toUpperCase() + emotion.slice(1)] === 'number') {
+        normalized[emotion] = emotions[emotion.charAt(0).toUpperCase() + emotion.slice(1)];
+      }
+      // Try all uppercase (e.g., "JOY")
+      else if (typeof emotions[emotion.toUpperCase()] === 'number') {
+        normalized[emotion] = emotions[emotion.toUpperCase()];
+      }
+      // No valid value found, use 0
+      else {
+        console.warn(`AudioSystem: No valid value found for emotion: ${emotion}`);
+        normalized[emotion] = 0;
+      }
+      
+      // Validate the emotion value is between 0 and 1
+      if (normalized[emotion] < 0 || normalized[emotion] > 1) {
+        console.warn(`AudioSystem: Invalid emotion value for ${emotion}: ${normalized[emotion]}, clamping to range [0,1]`);
+        normalized[emotion] = Math.max(0, Math.min(1, normalized[emotion]));
+      }
+    });
+    
+    return normalized;
   }
 }
 

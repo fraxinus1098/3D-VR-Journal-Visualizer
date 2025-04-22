@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { VRButton } from 'three/examples/jsm/webxr/VRButton.js';
 import DataLoader from './utils/data-loader.js';
 import EntryPanel from './components/EntryPanel.js';
+import JournalViz from './components/JournalViz.js';
 import VRController from './controllers/VRController.js';
 import DesktopControls from './controllers/DesktopControls.js';
 import Minimap from './ui/Minimap.js';
@@ -31,7 +32,7 @@ class WarholJournalViz {
     this.interactionManager = null;
     
     // Visualizers and UI components
-    this.orbVisualizer = null;
+    this.journalViz = null;
     this.minimap = null;
     this.emotionLegend = null;
     this.entryPanel = null;
@@ -93,12 +94,16 @@ class WarholJournalViz {
     // Create audio controls (pass audioSystem reference)
     this.audioControls = new AudioControls(this.camera, this.scene, this.audioSystem);
     
-    // Create orb visualizer
-    this.orbVisualizer = new OrbVisualizer(this.scene);
+    // Create JournalViz - the main visualization component
+    this.journalViz = new JournalViz({
+      scene: this.scene,
+      camera: this.camera,
+      audioSystem: this.audioSystem
+    });
     
     // Set up interaction manager
     this.interactionManager = new InteractionManager({
-      visualizer: this.orbVisualizer,
+      visualizer: this.journalViz.orbVisualizer, // Pass the orbVisualizer from JournalViz
       getInteractiveObjects: () => this.getInteractiveObjects(),
       onSelect: this.handleSelection.bind(this),
       onDeselect: this.handleDeselection.bind(this)
@@ -116,8 +121,9 @@ class WarholJournalViz {
           }
         }
         
-        if (this.entryPanel) {
-          const interaction = this.entryPanel.checkInteraction(intersection);
+        // Check for entry panel interaction
+        if (this.journalViz && this.journalViz.entryPanel) {
+          const interaction = this.journalViz.entryPanel.checkInteraction(intersection);
           if (interaction) {
             this.handlePanelInteraction(interaction);
             return;
@@ -145,8 +151,9 @@ class WarholJournalViz {
           }
         }
         
-        if (intersection && this.entryPanel) {
-          const interaction = this.entryPanel.checkInteraction(intersection);
+        // Check for entry panel interaction
+        if (intersection && this.journalViz && this.journalViz.entryPanel) {
+          const interaction = this.journalViz.entryPanel.checkInteraction(intersection);
           if (interaction) {
             this.handlePanelInteraction(interaction);
             return;
@@ -173,8 +180,9 @@ class WarholJournalViz {
           }
         }
         
-        if (intersection && this.entryPanel) {
-          const interaction = this.entryPanel.checkInteraction(intersection);
+        // Check for entry panel interaction
+        if (intersection && this.journalViz && this.journalViz.entryPanel) {
+          const interaction = this.journalViz.entryPanel.checkInteraction(intersection);
           if (interaction) {
             // Update cursor based on interaction type
             this.renderer.domElement.style.cursor = 'pointer';
@@ -198,12 +206,6 @@ class WarholJournalViz {
     
     // Add a simple test cube to confirm the scene is working
     this.addTestCube();
-    
-    // Initialize empty entry panel
-    this.entryPanel = new EntryPanel({
-      camera: this.camera,
-      scene: this.scene
-    });
     
     // Load data and create visualization
     this.loadData();
@@ -295,35 +297,29 @@ class WarholJournalViz {
   }
   
   animate(timestamp) {
-    // Start performance monitoring for this frame
     if (this.performanceMonitor) {
       this.performanceMonitor.begin();
     }
     
-    // Update VR controller
-    if (this.vrController) {
-      this.vrController.update();
-    }
-    
-    // Update desktop controls
+    // Update desktop controls if active and not in VR
     if (this.desktopControls) {
       // Tell desktop controls if we're in VR mode
       this.desktopControls.setVRStatus(this.renderer.xr.isPresenting);
       this.desktopControls.update();
     }
     
-    // Get camera position for audio and other position-based features
+    // Update VR controllers if active
+    if (this.vrController) {
+      this.vrController.update();
+    }
+    
+    // Get camera position for position-based features
     const cameraPosition = new THREE.Vector3();
     this.camera.getWorldPosition(cameraPosition);
     
-    // Update audio system
-    if (this.audioSystem && this.audioSystem.initialized) {
-      this.audioSystem.updateAudioMix(cameraPosition);
-    }
-    
-    // Update orb visualizer
-    if (this.orbVisualizer) {
-      this.orbVisualizer.update();
+    // Update journal visualization
+    if (this.journalViz) {
+      this.journalViz.update();
     }
     
     // Update minimap
@@ -336,31 +332,32 @@ class WarholJournalViz {
       this.emotionLegend.updatePosition();
     }
     
-    // Update entry panel position
-    if (this.entryPanel) {
-      this.entryPanel.updatePosition();
-    }
-    
     // Update audio controls position
     if (this.audioControls && this.audioControls.visible) {
       this.audioControls.updatePosition();
     }
     
-    // Update performance optimizer
-    if (this.performanceOptimizer) {
+    // Update performance optimizer if active
+    if (this.performanceOptimizer && this.performanceOptimizer.enabled) {
       this.performanceOptimizer.update();
+    }
+    
+    // Update audio system
+    if (this.audioSystem && this.audioSystem.initialized) {
+      this.audioSystem.updateAudioMix();
     }
     
     // Render the scene
     this.renderer.render(this.scene, this.camera);
     
-    // End performance monitoring for this frame
     if (this.performanceMonitor && this.performanceOptimizer) {
       this.performanceMonitor.end(
         this.performanceOptimizer.visibleCount,
         this.performanceOptimizer.culledCount,
         this.performanceOptimizer.isEnabled
       );
+    } else if (this.performanceMonitor) {
+      this.performanceMonitor.end();
     }
   }
   
@@ -376,22 +373,9 @@ class WarholJournalViz {
       interactiveObjects.push(this.testCube);
     }
     
-    // Get orb objects
-    if (this.orbVisualizer) {
-      interactiveObjects.push(...this.orbVisualizer.getInteractiveObjects());
-    }
-    
-    // Add panel interactive elements
-    if (this.entryPanel) {
-      if (this.entryPanel.closeButton) {
-        interactiveObjects.push(this.entryPanel.closeButton);
-      }
-      if (this.entryPanel.scrollUpButton) {
-        interactiveObjects.push(this.entryPanel.scrollUpButton);
-      }
-      if (this.entryPanel.scrollDownButton) {
-        interactiveObjects.push(this.entryPanel.scrollDownButton);
-      }
+    // Get journal visualization objects
+    if (this.journalViz) {
+      interactiveObjects.push(...this.journalViz.getInteractiveObjects());
     }
     
     // Add audio control interactive elements
@@ -415,18 +399,17 @@ class WarholJournalViz {
    * @param {string} interaction - The interaction type
    */
   handlePanelInteraction(interaction) {
-    if (!this.entryPanel) return;
+    if (!interaction) return;
     
-    switch (interaction) {
-      case 'close':
-        this.entryPanel.hide();
-        break;
-      case 'scroll-up':
-        this.entryPanel.scroll('up');
-        break;
-      case 'scroll-down':
-        this.entryPanel.scroll('down');
-        break;
+    if (interaction.type === 'close-button') {
+      // Deselect the current object
+      this.interactionManager.deselectObject();
+    } else if (interaction.type === 'scroll-up-button' && this.journalViz.entryPanel) {
+      // Scroll panel contents up
+      this.journalViz.entryPanel.scroll(-1);
+    } else if (interaction.type === 'scroll-down-button' && this.journalViz.entryPanel) {
+      // Scroll panel contents down
+      this.journalViz.entryPanel.scroll(1);
     }
   }
   
@@ -837,12 +820,12 @@ class WarholJournalViz {
       return;
     }
     
-    // Create orbs with the visualizer
-    const orbStats = this.orbVisualizer.createOrbs(this.journalEntries);
+    // Create visualization using journalViz component
+    const vizStats = this.journalViz.createVisualization(this.journalEntries);
     
-    // Position camera based on orb statistics
-    if (orbStats.avgPosition) {
-      const { x, y, z } = orbStats.avgPosition;
+    // Position camera based on visualization statistics
+    if (vizStats.avgPosition) {
+      const { x, y, z } = vizStats.avgPosition;
       this.camera.position.set(x, y + 1.6, z + 5); // Position camera near the center with some offset
       this.camera.lookAt(x, y, z);
       console.log(`Positioned camera at: ${x.toFixed(2)}, ${(y + 1.6).toFixed(2)}, ${(z + 5).toFixed(2)}`);
@@ -850,8 +833,8 @@ class WarholJournalViz {
     
     // Create minimap with proper Y range
     this.minimap = new Minimap(this.camera, this.scene, {
-      yRangeMin: orbStats.yRange ? orbStats.yRange.min - 2 : -10,
-      yRangeMax: orbStats.yRange ? orbStats.yRange.max + 2 : 30
+      yRangeMin: vizStats.yRange ? vizStats.yRange.min - 2 : -10,
+      yRangeMax: vizStats.yRange ? vizStats.yRange.max + 2 : 30
     });
     console.log('Minimap created');
     
@@ -859,7 +842,8 @@ class WarholJournalViz {
     if (this.minimap && this.journalEntries) {
       this.journalEntries.forEach(entry => {
         if (entry.coordinates) {
-          const emotionColor = this.orbVisualizer.blendEmotionColors(entry.emotions);
+          // Access orbVisualizer through journalViz
+          const emotionColor = this.journalViz.orbVisualizer.blendEmotionColors(entry.emotions);
           this.minimap.addPoint(
             entry.coordinates.x,
             entry.coordinates.z,
@@ -875,7 +859,7 @@ class WarholJournalViz {
     
     // Create emotion legend
     this.emotionLegend = new EmotionLegend(this.camera, this.scene, {
-      colorMap: this.orbVisualizer.emotionColorsRGB
+      colorMap: this.journalViz.orbVisualizer.emotionColorsRGB
     });
     console.log('Emotion legend created');
     
@@ -919,9 +903,9 @@ class WarholJournalViz {
     
     // Get all orbs to optimize
     const orbsToOptimize = [];
-    if (this.orbVisualizer) {
+    if (this.journalViz && this.journalViz.orbVisualizer) {
       // Add all orbs from orbVisualizer
-      this.orbVisualizer.orbObjects.forEach((orb) => {
+      this.journalViz.orbVisualizer.orbObjects.forEach((orb) => {
         orbsToOptimize.push(orb);
       });
     }
@@ -996,15 +980,14 @@ class WarholJournalViz {
    * Clean up and dispose resources when application is closed
    */
   dispose() {
-    // Dispose visualizer resources
-    if (this.orbVisualizer) {
-      this.orbVisualizer.dispose();
+    // Dispose journal visualization
+    if (this.journalViz) {
+      this.journalViz.dispose();
     }
     
     // Dispose UI components
     if (this.minimap) this.minimap.dispose();
     if (this.emotionLegend) this.emotionLegend.dispose();
-    if (this.entryPanel) this.entryPanel.dispose();
     if (this.notifications) this.notifications.dispose();
     if (this.audioControls) this.audioControls.dispose();
     if (this.performanceMonitor) this.performanceMonitor.dispose();

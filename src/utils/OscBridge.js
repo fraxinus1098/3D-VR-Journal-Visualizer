@@ -22,6 +22,11 @@ class OscBridge {
       "ws://[::1]:8080"         // IPv6 localhost
     ];
     
+    // Connection monitoring variables
+    this.connectionCheckInterval = null;
+    this.reconnecting = false;
+    this.lastMessageTime = Date.now();
+    
     // Debug flag - can be enabled from console for more verbose logging
     this.debug = false;
     
@@ -30,6 +35,9 @@ class OscBridge {
     
     // Initialize connection
     this.connect();
+    
+    // Start connection monitoring
+    this.startConnectionMonitoring();
     
     console.log('OscBridge: Initialization complete');
     console.log('OscBridge: For debugging, use window._oscBridge in console');
@@ -40,10 +48,19 @@ class OscBridge {
    * @returns {Promise<boolean>} True if connection successful, false otherwise
    */
   async connect() {
+    // Don't attempt to connect if already connected
     if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
       console.log('OscBridge: Already connected');
       return true;
     }
+    
+    // Don't allow multiple connection attempts at the same time
+    if (this.reconnecting) {
+      console.log('OscBridge: Already attempting to reconnect');
+      return false;
+    }
+    
+    this.reconnecting = true;
     
     return new Promise((resolve) => {
       try {
@@ -88,9 +105,14 @@ class OscBridge {
           clearTimeout(connectionTimeout);
           this.connected = true;
           this.connectionAttempts = 0;
+          this.reconnecting = false;
+          this.lastMessageTime = Date.now();
           
           // Send a test message
           this.sendTestMessage();
+          
+          // Create a heartbeat to keep the connection alive
+          this.startHeartbeat();
           
           resolve(true);
         };
@@ -101,6 +123,7 @@ class OscBridge {
           console.log('OscBridge: Common close codes: 1000=Normal, 1001=GoingAway, 1006=Abnormal, 1011=Server Error');
           
           this.connected = false;
+          this.reconnecting = false;
           
           if (this.connectionAttempts < this.maxConnectionAttempts) {
             console.log('OscBridge: Will retry connection after delay...');
@@ -127,13 +150,24 @@ class OscBridge {
           console.error("- Network/firewall blocking WebSocket connections");
           
           this.connected = false;
+          this.reconnecting = false;
           resolve(false);
+        };
+        
+        // Add message handler to update last message time
+        this.socket.onmessage = (event) => {
+          this.lastMessageTime = Date.now();
+          
+          if (this.debug) {
+            console.log("OscBridge: Received message from server:", event.data);
+          }
         };
         
       } catch (error) {
         console.error('OscBridge: Failed to connect to WebSocket OSC bridge:', error);
         
         this.connected = false;
+        this.reconnecting = false;
         
         if (this.connectionAttempts < this.maxConnectionAttempts) {
           console.log('OscBridge: Will retry connection...');
@@ -146,6 +180,89 @@ class OscBridge {
         resolve(false);
       }
     });
+  }
+  
+  /**
+   * Send a heartbeat message to keep the connection alive
+   */
+  startHeartbeat() {
+    // Clear any existing heartbeat
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    
+    // Send a heartbeat every 15 seconds
+    this.heartbeatInterval = setInterval(() => {
+      if (this.connected && this.socket && this.socket.readyState === WebSocket.OPEN) {
+        try {
+          // Send a simple heartbeat message
+          const heartbeat = {
+            address: "/warhol/heartbeat",
+            values: [Date.now()]
+          };
+          
+          this.socket.send(JSON.stringify(heartbeat));
+          
+          if (this.debug) {
+            console.log("OscBridge: Sent heartbeat");
+          }
+        } catch (error) {
+          console.error("OscBridge: Error sending heartbeat:", error);
+          this.connected = false;
+          this.connect(); // Try to reconnect
+        }
+      } else {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+    }, 15000); // 15 seconds
+  }
+  
+  /**
+   * Set up connection monitoring to detect and recover from stale connections
+   */
+  startConnectionMonitoring() {
+    // Clear any existing monitoring
+    if (this.connectionCheckInterval) {
+      clearInterval(this.connectionCheckInterval);
+    }
+    
+    // Check connection every 10 seconds
+    this.connectionCheckInterval = setInterval(() => {
+      // If we think we're connected, verify the connection is still active
+      if (this.connected && this.socket) {
+        // Check if socket is in a closed or closing state
+        if (this.socket.readyState === WebSocket.CLOSED || this.socket.readyState === WebSocket.CLOSING) {
+          console.warn("OscBridge: Socket is closed but we thought it was connected. Reconnecting...");
+          this.connected = false;
+          this.connect();
+          return;
+        }
+        
+        // Check if we haven't received a message in over 30 seconds
+        const now = Date.now();
+        if (now - this.lastMessageTime > 30000) {
+          console.warn("OscBridge: No messages received in 30 seconds. Connection may be stale. Reconnecting...");
+          
+          // Try to close the socket if it's still open
+          if (this.socket.readyState === WebSocket.OPEN) {
+            try {
+              this.socket.close();
+            } catch (e) {
+              // Ignore errors during close
+            }
+          }
+          
+          this.connected = false;
+          this.connect();
+        }
+      }
+      // If we're not connected and not currently trying to reconnect, attempt to connect
+      else if (!this.connected && !this.reconnecting && this.connectionAttempts < this.maxConnectionAttempts) {
+        console.log("OscBridge: Not connected. Attempting to reconnect...");
+        this.connect();
+      }
+    }, 10000); // 10 seconds
   }
   
   /**
@@ -319,6 +436,40 @@ class OscBridge {
   }
   
   /**
+   * Check if the connection is currently active
+   * @returns {boolean} True if connected, false otherwise
+   */
+  isConnected() {
+    return this.connected && this.socket && this.socket.readyState === WebSocket.OPEN;
+  }
+  
+  /**
+   * Manually reconnect to the WebSocket server
+   * Useful for console debugging or after network changes
+   * @returns {Promise<boolean>} True if connection successful, false otherwise
+   */
+  async reconnect() {
+    console.log('OscBridge: Manual reconnect requested');
+    
+    // Reset connection attempts to try all URLs again
+    this.connectionAttempts = 0;
+    
+    // Close existing connection if any
+    if (this.socket) {
+      try {
+        this.socket.close();
+      } catch (e) {
+        // Ignore errors during close
+      }
+    }
+    
+    this.connected = false;
+    
+    // Try to connect again
+    return this.connect();
+  }
+  
+  /**
    * Close the OSC connection
    */
   disconnect() {
@@ -335,6 +486,17 @@ class OscBridge {
       // Close the socket
       this.socket.close();
       this.connected = false;
+      
+      // Clear intervals
+      if (this.heartbeatInterval) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+      
+      if (this.connectionCheckInterval) {
+        clearInterval(this.connectionCheckInterval);
+        this.connectionCheckInterval = null;
+      }
       
       console.log('OscBridge: Disconnected from WebSocket OSC bridge');
     } catch (error) {
