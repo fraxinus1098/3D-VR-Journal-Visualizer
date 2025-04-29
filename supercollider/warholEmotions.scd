@@ -636,7 +636,7 @@ s.waitForBoot({
 	};
 };
 
-// Super direct test that bypasses all OSC and runs the pattern directly
+// Super direct test function for emotions with direct output
 ~superDirectTest = {|emotion="joy", intensity=0.7|
 	var emotionSymbol, pattern;
 	
@@ -703,6 +703,58 @@ s.waitForBoot({
 	});
 	
 	"All patterns and synths stopped.".postln;
+};
+
+// Play all 8 emotions together with different intensity profiles
+// Example 1: Joyful/Positive dominant profile
+~playAllEmotions1 = {
+	~stopAllPatterns.value; // Clear existing patterns first
+	
+	// Call superDirectTest for each emotion with different intensities
+	~superDirectTest.value("joy", 0.9);
+	~superDirectTest.value("trust", 0.8);
+	~superDirectTest.value("fear", 0.3);
+	~superDirectTest.value("surprise", 0.5);
+	~superDirectTest.value("sadness", 0.2);
+	~superDirectTest.value("disgust", 0.1);
+	~superDirectTest.value("anger", 0.2);
+	~superDirectTest.value("anticipation", 0.7);
+	
+	"Playing all 8 emotions - JOYFUL PROFILE: High joy, trust, and anticipation".postln;
+};
+
+// Example 2: Anxious/Negative dominant profile
+~playAllEmotions2 = {
+	~stopAllPatterns.value; // Clear existing patterns first
+	
+	// Call superDirectTest for each emotion with different intensities
+	~superDirectTest.value("joy", 0.2);
+	~superDirectTest.value("trust", 0.1);
+	~superDirectTest.value("fear", 0.9);
+	~superDirectTest.value("surprise", 0.7);
+	~superDirectTest.value("sadness", 0.8);
+	~superDirectTest.value("disgust", 0.6);
+	~superDirectTest.value("anger", 0.7);
+	~superDirectTest.value("anticipation", 0.4);
+	
+	"Playing all 8 emotions - ANXIOUS PROFILE: High fear, sadness, and anger".postln;
+};
+
+// Example 3: Balanced/Neutral profile
+~playAllEmotions3 = {
+	~stopAllPatterns.value; // Clear existing patterns first
+	
+	// Call superDirectTest for each emotion with equal intensities
+	~superDirectTest.value("joy", 0.5);
+	~superDirectTest.value("trust", 0.5);
+	~superDirectTest.value("fear", 0.5);
+	~superDirectTest.value("surprise", 0.5);
+	~superDirectTest.value("sadness", 0.5);
+	~superDirectTest.value("disgust", 0.5);
+	~superDirectTest.value("anger", 0.5);
+	~superDirectTest.value("anticipation", 0.5);
+	
+	"Playing all 8 emotions - BALANCED PROFILE: All emotions at equal intensity".postln;
 };
 
 // Simple beep - most basic audio test
@@ -817,3 +869,6 @@ s.waitForBoot({
 // ~directBeep.value; // Alternative direct beep
 // ~testAudio.value; // Previous test function, fixed
 // ~stopAllPatterns.value; 
+// ~playAllEmotions1.value; // For the joyful profile
+// ~playAllEmotions2.value; // For the anxious profile
+// ~playAllEmotions3.value; // For the balanced profile
